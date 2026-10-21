@@ -1,0 +1,47 @@
+# Example ESPHome config: REDARC RedVision battery -> Home Assistant.
+#
+# Flash this to any ESP32 (classic ESP32 with Bluetooth; NOT an ESP32-C3/S3-only
+# BLE-5 variant unless it supports BLE). The ESP32 connects to the Display,
+# pairs once with the on-screen passkey, and publishes battery SoC + voltage.
+
+esphome:
+  name: redarc-battery
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf   # esp-idf is required for the BLE bonding/passkey APIs
+
+logger:
+api:
+ota:
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Pull this component straight from GitHub.
+external_components:
+  - source:
+      type: git
+      url: https://github.com/duarte-hub/redarc-rbus-esphome
+    components: [redarc_rbus]
+
+# BLE central stack.
+esp32_ble_tracker:
+esp32_ble:
+  io_capability: keyboard_only   # we type the passkey the Display shows
+
+# The Display. MAC = u-blox NINA-B1 module address (OUI d4:ca:6e = u-blox AG).
+# If yours differs, run an esp32_ble_tracker scan and look for "REDARC DISP4300 ...".
+ble_client:
+  - mac_address: D4:CA:6E:B6:1E:5F
+    id: redarc_display
+
+sensor:
+  - platform: redarc_rbus
+    ble_client_id: redarc_display
+    passkey: 123456            # <-- the 6-digit code on Settings -> Bluetooth (no leading zero issues: it's an int)
+    state_of_charge:
+      name: "Battery State of Charge"
+    voltage:
+      name: "Battery Voltage"
