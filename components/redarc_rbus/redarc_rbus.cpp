@@ -5,6 +5,8 @@
 #include "esphome/core/log.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 
+#include <cstring>
+
 namespace esphome {
 namespace redarc_rbus {
 
@@ -91,10 +93,21 @@ void RedarcRbus::loop() {
   this->last_write_ms_ = now;
 }
 
+// GAP events are delivered to every ble_client node, not just ours, so we must
+// only act on events that belong to OUR Display. Otherwise we would hand our
+// passkey to, or mark ourselves bonded against, some other peer the ESP32 is
+// pairing with.
+bool RedarcRbus::is_our_peer_(const uint8_t *bda) {
+  return bda != nullptr && this->parent() != nullptr &&
+         memcmp(bda, this->parent()->get_remote_bda(), 6) == 0;
+}
+
 void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
     case ESP_GAP_BLE_PASSKEY_REQ_EVT:
-      // The Display showed a passkey; reply with the one from the config.
+      // Only reply to a passkey request coming from our Display.
+      if (!this->is_our_peer_(param->ble_security.ble_req.bd_addr))
+        break;
       if (this->have_passkey_) {
         ESP_LOGI(TAG, "Passkey requested; replying with configured passkey");
         esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, this->passkey_);
@@ -104,6 +117,9 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       }
       break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
+      // Only treat auth completion for our Display as our bond.
+      if (!this->is_our_peer_(param->ble_security.auth_cmpl.bd_addr))
+        break;
       if (param->ble_security.auth_cmpl.success) {
         ESP_LOGI(TAG, "Bonded with Display");
         this->bonded_ = true;

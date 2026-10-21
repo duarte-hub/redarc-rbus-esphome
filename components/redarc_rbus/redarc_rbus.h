@@ -48,6 +48,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void configure_security_();
   void start_notify_();
   void handle_frame_(const uint8_t *data, uint16_t len);
+  bool is_our_peer_(const uint8_t *bda);
 
   sensor::Sensor *soc_sensor_{nullptr};
   sensor::Sensor *voltage_sensor_{nullptr};
