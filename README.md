@@ -95,6 +95,57 @@ integer and `field = (value >> ((startByte-1)*8)) & ((1<<bitLen)-1)`.
 If pairing fails with a reason code, double-check the passkey. Only one central
 can be connected at a time, so close the phone app while the ESP32 connects.
 
+## The bond survives reflashes; the rotating code only matters at pairing time
+
+After pairing, the BLE bond is stored in the ESP32's **NVS flash partition**. A
+normal `esphome run` / OTA update overwrites only the *app* partition, so the
+bond — and therefore the connection — **survives firmware updates**. You pair
+once and the rotating passkey never matters again. You only need to re-pair after
+a **full chip erase** (`esptool erase_flash`), so avoid that and prefer OTA.
+
+## Re-pairing with a rotating code, without recompiling
+
+If your Display shows a **fresh passkey each time** (many do), you don't want to
+edit YAML and reflash every time you need to re-pair. Add a runtime input and a
+button so you enter the current code from Home Assistant:
+
+```yaml
+sensor:
+  - platform: redarc_rbus
+    id: redarc_hub                 # <-- give the component an id
+    ble_client_id: redarc_display
+    passkey: !secret redarc_passkey # optional fallback for the very first boot
+    state_of_charge:
+      name: "Battery State of Charge"
+    voltage:
+      name: "Battery Voltage"
+
+number:
+  - platform: template
+    name: "REDARC Pairing Code"
+    id: redarc_passkey_input
+    min_value: 0
+    max_value: 999999
+    step: 1
+    mode: box
+    optimistic: true
+    restore_value: true            # remembered across reboots (kept in NVS)
+    set_action:
+      - lambda: "id(redarc_hub).set_passkey((uint32_t) x);"
+
+button:
+  - platform: template
+    name: "REDARC Pair Now"
+    on_press:
+      - lambda: "id(redarc_hub).pair_now();"
+```
+
+To (re-)pair: open the Display's *Settings → Bluetooth* screen, type the code it
+shows into **REDARC Pairing Code** in HA, then press **REDARC Pair Now**. The
+component forgets any old bond, reconnects, and answers the Display's passkey
+challenge with the code you just entered. Once bonded, you're set until the next
+full erase.
+
 ## Configuration reference
 
 `sensor:` platform `redarc_rbus`:

@@ -203,6 +203,22 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
   }
 }
 
+void RedarcRbus::pair_now() {
+  if (this->parent() == nullptr)
+    return;
+  uint8_t *bda = this->parent()->get_remote_bda();
+  ESP_LOGI(TAG, "Re-pairing: removing stored bond and reconnecting");
+  // Drop any old bond so the Display issues a fresh passkey challenge, which we
+  // answer with the currently-configured (just-entered) rotating code.
+  esp_ble_remove_bond_device(bda);
+  this->bonded_ = false;
+  this->notify_started_ = false;
+  this->sending_filters_ = false;
+  this->filter_idx_ = 0;
+  // Disconnect if connected; the ble_client auto-reconnects and pairing restarts.
+  esp_ble_gap_disconnect(bda);
+}
+
 void RedarcRbus::start_notify_() {
   if (this->notify_started_ || !this->have_handles_ || !this->bonded_)
     return;

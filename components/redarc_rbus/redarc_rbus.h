@@ -41,6 +41,9 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
     this->passkey_ = passkey;
     this->have_passkey_ = true;
   }
+  // Forget the stored bond and force a fresh pairing using the current passkey.
+  // Call this (e.g. from a button in HA) after entering a freshly-shown rotating code.
+  void pair_now();
   void set_soc_sensor(sensor::Sensor *s) { this->soc_sensor_ = s; }
   void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
 
