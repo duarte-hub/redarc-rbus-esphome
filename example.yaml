@@ -39,9 +39,20 @@ ble_client:
 
 sensor:
   - platform: redarc_rbus
+    id: redarc_hub
     ble_client_id: redarc_display
     passkey: 123456            # <-- the 6-digit code on Settings -> Bluetooth (no leading zero issues: it's an int)
+    status_led: GPIO2
     state_of_charge:
       name: "Battery State of Charge"
     voltage:
       name: "Battery Voltage"
+
+# Output control: each switch replays the exact R-Bus command frames the
+# RedVision app sends (captured from your unit) - on_frame / off_frame.
+switch:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub
+    name: "Main Light"
+    on_frame:  "2f0024fa08cb00030701000000"
+    off_frame: "2f0024fa08cb00030700000000"

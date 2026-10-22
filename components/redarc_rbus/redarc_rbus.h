@@ -7,9 +7,12 @@
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/switch/switch.h"
 
 #include <esp_gap_ble_api.h>
 #include <esp_gattc_api.h>
+
+#include <vector>
 
 namespace esphome {
 namespace redarc_rbus {
@@ -44,6 +47,11 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // Forget the stored bond and force a fresh pairing using the current passkey.
   // Call this (e.g. from a button in HA) after entering a freshly-shown rotating code.
   void pair_now();
+
+  // Write a raw R-Bus command frame to char 8001 (used by output switches).
+  // Returns false if not connected/ready, so the switch can reflect the failure.
+  bool send_command(const std::vector<uint8_t> &frame);
+  bool ready() const { return this->notify_started_ && this->notify_handle_ != 0; }
   void set_soc_sensor(sensor::Sensor *s) { this->soc_sensor_ = s; }
   void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
@@ -79,6 +87,26 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   bool sending_filters_{false};
   size_t filter_idx_{0};
   uint32_t last_write_ms_{0};
+};
+
+// A switch that turns a REDARC output on/off by replaying captured R-Bus
+// command frames (write to char 8001). Using the exact bytes the RedVision app
+// sends avoids any risk of addressing the wrong channel.
+class RedarcRbusSwitch : public switch_::Switch, public Component {
+ public:
+  void set_parent(RedarcRbus *parent) { this->parent_ = parent; }
+  void set_on_frame(const std::vector<uint8_t> &f) { this->on_frame_ = f; }
+  void set_off_frame(const std::vector<uint8_t> &f) { this->off_frame_ = f; }
+  void dump_config() override;
+  // No reliable per-output feedback yet, so report as an assumed-state switch.
+  bool assumed_state() override { return true; }
+
+ protected:
+  void write_state(bool state) override;
+
+  RedarcRbus *parent_{nullptr};
+  std::vector<uint8_t> on_frame_;
+  std::vector<uint8_t> off_frame_;
 };
 
 }  // namespace redarc_rbus

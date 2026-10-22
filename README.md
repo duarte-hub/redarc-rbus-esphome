@@ -11,6 +11,9 @@ Currently published sensors:
 | Battery State of Charge | % | R-Bus PGN 127236 |
 | Battery Voltage | V | R-Bus PGN 127498 |
 
+It can also **switch outputs** on/off (e.g. lights) by replaying the exact R-Bus
+command frames the RedVision app sends — see *Output control* below.
+
 This was built by reverse-engineering the RedVision app and the Display's BLE
 interface for **interoperability with hardware the owner already owns**. It is
 read-only: it never writes control/config to the Display, only the filter frames
@@ -166,11 +169,52 @@ Once bonded, the keys are stored and you're set until the next full erase.
 | `state_of_charge` | no | Sensor schema for battery SoC (%) |
 | `voltage` | no | Sensor schema for battery voltage (V) |
 
+## Output control (switches)
+
+The TVMS switches loads when the app writes a `power_port_control` /
+`lighting_control_command` R-Bus frame to char 8001. These are plaintext and
+need no extra authentication beyond the bond. Rather than guess the channel
+encoding, the `switch` platform **replays the exact bytes** the app sends, so it
+can only ever do what the real app did — no risk of hitting the wrong channel.
+
+```yaml
+switch:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub        # id of your sensor-platform hub
+    name: "Main Light"
+    on_frame:  "2f0024fa08cb00030701000000"
+    off_frame: "2f0024fa08cb00030700000000"
+```
+
+### Capturing frames for your outputs
+
+`on_frame` / `off_frame` are the 13-byte R-Bus frames written to char 8001.
+To get them for any output:
+
+1. Take a PacketLogger capture (as for telemetry) while you toggle **one** output
+   ON then OFF in the RedVision app.
+2. Pull the two writes to handle `0x0020` that are unique and ~seconds apart:
+   ```
+   tshark -r capture.pklg -Y "btatt.opcode==0x52 && btatt.handle==0x0020" \
+          -T fields -e frame.time_relative -e btatt.value
+   ```
+   The ON/OFF pair differs by a single byte. Paste each as a hex string.
+
+The switch is an *assumed-state* switch (it shows the last commanded state); live
+read-back from `device_output_status` is on the roadmap.
+
+> Safety: these frames command a power-distribution box. Only use frames you
+> captured from your own unit, and label each switch clearly.
+
 ## Status / roadmap
 
 - ✅ State of Charge, voltage — decoded and verified against the live display.
+- ✅ Output control — switch outputs on/off by replaying captured command frames.
 - ⏳ State of Health, time-to-full/flat, current, temperature — PGNs are known;
   decode to be confirmed against the display and added.
+- ⏳ Live output state read-back (`device_output_status`) to drive non-assumed switches.
+- ⏳ Channel-based switch config (specify an output number instead of raw frames),
+  once a few more captured samples confirm the channel encoding.
 
 ## Legal
 

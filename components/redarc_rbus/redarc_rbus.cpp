@@ -271,6 +271,31 @@ void RedarcRbus::pair_now() {
   esp_ble_gap_disconnect(bda);
 }
 
+bool RedarcRbus::send_command(const std::vector<uint8_t> &frame) {
+  if (!this->ready() || this->parent() == nullptr) {
+    ESP_LOGW(TAG, "Not connected/ready; command dropped");
+    return false;
+  }
+  esp_err_t err = esp_ble_gattc_write_char(
+      this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->notify_handle_,
+      frame.size(), const_cast<uint8_t *>(frame.data()), ESP_GATT_WRITE_TYPE_NO_RSP,
+      ESP_GATT_AUTH_REQ_NONE);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Command write failed: %d", err);
+    return false;
+  }
+  this->blink_activity_();
+  return true;
+}
+
+void RedarcRbusSwitch::write_state(bool state) {
+  const std::vector<uint8_t> &frame = state ? this->on_frame_ : this->off_frame_;
+  if (this->parent_ != nullptr && this->parent_->send_command(frame))
+    this->publish_state(state);  // optimistic; no device read-back yet
+}
+
+void RedarcRbusSwitch::dump_config() { LOG_SWITCH("", "REDARC Output Switch", this); }
+
 void RedarcRbus::start_notify_() {
   if (this->notify_started_ || !this->have_handles_ || !this->bonded_)
     return;

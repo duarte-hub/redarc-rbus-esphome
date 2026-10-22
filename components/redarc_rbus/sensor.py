@@ -12,7 +12,7 @@ from esphome.const import (
     UNIT_VOLT,
 )
 
-from . import redarc_rbus_ns
+from . import RedarcRbus
 
 CODEOWNERS = ["@duarte-hub"]
 DEPENDENCIES = ["ble_client", "esp32_ble"]
@@ -20,10 +20,6 @@ DEPENDENCIES = ["ble_client", "esp32_ble"]
 CONF_STATE_OF_CHARGE = "state_of_charge"
 CONF_PASSKEY = "passkey"
 CONF_STATUS_LED = "status_led"
-
-RedarcRbus = redarc_rbus_ns.class_(
-    "RedarcRbus", cg.Component, ble_client.BLEClientNode
-)
 
 CONFIG_SCHEMA = (
     cv.Schema(
