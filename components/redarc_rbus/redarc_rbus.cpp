@@ -504,8 +504,13 @@ void RedarcRbus::start_notify_() {
                                     this->parent()->get_remote_bda(), this->notify_handle_);
 }
 
-bool PublishGate::due(float v, uint32_t now) {
+bool PublishGate::due(float v, uint32_t now, uint32_t min_interval_ms) {
   if (v == this->last && now - this->last_ms < PUBLISH_HEARTBEAT_MS)
+    return false;
+  // Rate-limit changing values; frames repeat every ~0.5-2 s, so the latest value still goes
+  // out within one interval.
+  if (v != this->last && min_interval_ms != 0 && !std::isnan(this->last) &&
+      now - this->last_ms < min_interval_ms)
     return false;
   this->last = v;
   this->last_ms = now;
@@ -547,7 +552,7 @@ void RedarcRbus::publish_power_(sensor::Sensor *s, PublishGate &gate, uint64_t p
   if (s == nullptr || !field_value_(CURRENT, payload, i) || !field_value_(VOLTAGE, payload, v))
     return;
   const float w = roundf(v * i * 10.0f) / 10.0f;
-  if (gate.due(w, now))
+  if (gate.due(w, now, this->min_publish_ms_))
     s->publish_state(w);
 }
 
@@ -584,6 +589,10 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
     ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
              pay[1] | (pay[2] << 8), pay[3], pay[4]);
 
+  auto only = this->pgn_source_.find(pgn);
+  if (only != this->pgn_source_.end() && only->second != hdr[3])
+    return;  // same PGN from another node; entities follow the configured one
+
   for (auto &b : this->listeners_) {
     uint32_t raw;
     if (b.field.pgn == pgn && field_raw_(b.field, payload, raw))
@@ -592,7 +601,7 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
 
   for (auto &b : this->sensors_) {
     float v;
-    if (b.field.pgn == pgn && field_value_(b.field, payload, v) && b.gate.due(v, now))
+    if (b.field.pgn == pgn && field_value_(b.field, payload, v) && b.gate.due(v, now, this->min_publish_ms_))
       b.sensor->publish_state(v);
   }
 #ifdef USE_BINARY_SENSOR

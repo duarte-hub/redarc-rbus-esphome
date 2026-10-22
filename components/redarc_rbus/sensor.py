@@ -15,6 +15,8 @@ CONF_RSSI = "rssi"
 CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_READ_CHANNEL_LABELS = "read_channel_labels"
+CONF_MIN_PUBLISH_INTERVAL = "min_publish_interval"
+CONF_LOAD_DISCONNECT_NODE = "load_disconnect_node"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
 CONF_ANALOG_CHANNELS = "analog_channels"
@@ -145,6 +147,11 @@ CONFIG_SCHEMA = (
             # Experimental: request IO channel labels after connecting and log them. Off by
             # default — on a DISP4300 telemetry stopped right after this request.
             cv.Optional(CONF_READ_CHANNEL_LABELS, default=False): cv.boolean,
+            # Changed sensor values go to HA at most this often (0s = every change).
+            cv.Optional(CONF_MIN_PUBLISH_INTERVAL, default="5s"): cv.positive_time_period_milliseconds,
+            # Load Disconnect Status (127240) comes from both the charger (0x01) and the
+            # distribution box (0x24) with different settings; follow this node's values.
+            cv.Optional(CONF_LOAD_DISCONNECT_NODE, default=0x24): cv.hex_int_range(min=0, max=0xFD),
             cv.Optional(CONF_CONNECTION_INTERVAL, default="0ms"): cv.All(
                 cv.positive_time_period_milliseconds,
                 cv.Range(max=cv.TimePeriod(milliseconds=1000)),
@@ -188,3 +195,5 @@ async def to_code(config):
     cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))
     cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))
     cg.add(var.set_read_channel_labels(config[CONF_READ_CHANNEL_LABELS]))
+    cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
+    cg.add(var.set_pgn_source(127240, config[CONF_LOAD_DISCONNECT_NODE]))

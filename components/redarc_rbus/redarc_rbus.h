@@ -79,7 +79,8 @@ struct FieldSpec {
 struct PublishGate {
   float last{NAN};
   uint32_t last_ms{0};
-  bool due(float v, uint32_t now);
+  // min_interval_ms: rate limit for changing values (0 = publish every change).
+  bool due(float v, uint32_t now, uint32_t min_interval_ms = 0);
 };
 
 // An entity that wants the raw value of one field each time it streams (control read-back).
@@ -154,6 +155,11 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_solar_power_sensor(sensor::Sensor *s) { this->solar_power_sensor_ = s; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
+  // Numeric sensors publish a changed value at most this often (switches/text stay instant).
+  void set_min_publish_interval(uint32_t ms) { this->min_publish_ms_ = ms; }
+  // Only accept `pgn` from node `addr`. Some PGNs are sent by several nodes with different
+  // contents (e.g. load disconnect status from both the charger and the distribution box).
+  void set_pgn_source(uint32_t pgn, uint8_t addr) { this->pgn_source_[pgn] = addr; }
   // BLE connection interval requested once streaming starts. ESPHome's client otherwise runs
   // ~7.5-11 ms, which with the Display's steady notifications starves Wi-Fi on the shared radio.
   void set_conn_interval(uint32_t ms) { this->conn_interval_ms_ = ms; }
@@ -203,6 +209,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   };
   std::vector<ListenerBinding> listeners_;
   std::map<uint32_t, uint8_t> source_addr_;  // PGN -> node address that sends it
+  std::map<uint32_t, uint8_t> pgn_source_;   // PGN -> only node accepted for entities
+  uint32_t min_publish_ms_{5000};
 
   // IO channel labels (the names shown on the Display), read once per connection with a
   // PGN Request for "IO Channel Get Label Data" and logged so channels can be identified.
