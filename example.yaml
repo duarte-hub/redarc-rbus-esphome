@@ -2,7 +2,8 @@
 #
 # Flash this to any ESP32 (classic ESP32 with Bluetooth; NOT an ESP32-C3/S3-only
 # BLE-5 variant unless it supports BLE). The ESP32 connects to the Display,
-# pairs once with the on-screen passkey, and publishes battery SoC + voltage.
+# pairs once with the on-screen passkey, and publishes battery, charger, inverter
+# and alarm state. Every entity is optional - delete the ones you don't want.
 
 esphome:
   name: redarc-battery
@@ -47,6 +48,93 @@ sensor:
       name: "Battery State of Charge"
     voltage:
       name: "Battery Voltage"
+    current:
+      name: "Battery Current"         # negative = discharging
+    battery_power:
+      name: "Battery Power"           # V x I, negative = discharging
+    temperature:
+      name: "Battery Temperature"
+    state_of_health:
+      name: "Battery State of Health"
+    time_remaining:
+      name: "Battery Time Remaining"  # minutes; + = to full, - = to flat
+    load_current:
+      name: "Load Current"
+    solar_voltage:
+      name: "Solar Voltage"
+    solar_current:
+      name: "Solar Current"
+    solar_power:
+      name: "Solar Power"
+    dc_input_voltage:
+      name: "DC Input Voltage"
+    dc_input_current:
+      name: "DC Input Current"
+    ac_input_voltage:
+      name: "AC Input Voltage"
+    ac_input_current:
+      name: "AC Input Current"
+    charger_output_voltage:
+      name: "Charger Output Voltage"
+    charger_output_current:
+      name: "Charger Output Current"
+    inverter_output_voltage:
+      name: "Inverter Output Voltage"
+    inverter_power:
+      name: "Inverter Power"
+    # Configuration read-back (diagnostic entities)
+    battery_capacity:
+      name: "Battery Capacity"
+    battery_max_charge_current:
+      name: "Battery Max Charge Current"
+    charger_max_output_current:
+      name: "Charger Max Output Current"
+    low_battery_soc_setpoint:
+      name: "Low Battery SoC Alarm Set Point"
+    low_battery_voltage_setpoint:
+      name: "Low Battery Voltage Alarm Set Point"
+    load_disconnect_voltage_off:
+      name: "Load Disconnect Voltage Off"
+    load_disconnect_voltage_on:
+      name: "Load Disconnect Voltage On"
+    load_disconnect_soc_off:
+      name: "Load Disconnect SoC Off"
+    load_disconnect_soc_on:
+      name: "Load Disconnect SoC On"
+
+binary_sensor:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub
+    ac_input_active:
+      name: "AC Input Active"
+    dc_input_active:
+      name: "DC Input Active"
+    solar_input_active:
+      name: "Solar Input Active"
+    charger_derating:
+      name: "Charger Derating"
+    inverter_on:
+      name: "Inverter On"
+    low_battery_soc_alarm:
+      name: "Low Battery SoC Alarm"
+    low_battery_voltage_alarm:
+      name: "Low Battery Voltage Alarm"
+    load_disconnect_active:
+      name: "Load Disconnect Active"
+
+text_sensor:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub
+    charging_stage:
+      name: "Charging Stage"
+    charging_mode:
+      name: "Charging Mode"
+    battery_chemistry:
+      name: "Battery Chemistry"
+    dc_input_trigger:
+      name: "DC Input Trigger"
+    load_disconnect_trigger:
+      name: "Load Disconnect Trigger"
 
 # Output control: each switch replays the exact R-Bus command frames the
 # RedVision app sends (captured from your unit) - on_frame / off_frame.

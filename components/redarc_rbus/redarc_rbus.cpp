@@ -57,6 +57,8 @@ static const uint8_t FILTERS[][12] = {
 };
 static const size_t FILTER_COUNT = sizeof(FILTERS) / sizeof(FILTERS[0]);
 static const uint32_t FILTER_WRITE_INTERVAL_MS = 40;
+// Re-publish an unchanged value at least this often, so HA graphs/history stay alive.
+static const uint32_t PUBLISH_HEARTBEAT_MS = 60000;
 
 void RedarcRbus::setup() {
   this->configure_security_();
@@ -336,9 +338,47 @@ void RedarcRbus::start_notify_() {
                                     this->parent()->get_remote_bda(), this->notify_handle_);
 }
 
+bool PublishGate::due(float v, uint32_t now) {
+  if (v == this->last && now - this->last_ms < PUBLISH_HEARTBEAT_MS)
+    return false;
+  this->last = v;
+  this->last_ms = now;
+  return true;
+}
+
+// J1939 reserves the top of each field's range: for >=8-bit fields 0xFB..0xFF (per byte)
+// mean error / not available; for short fields the all-ones value means not available.
+bool RedarcRbus::field_raw_(const FieldSpec &f, uint64_t payload, uint32_t &raw) {
+  const uint64_t mask = (f.bits >= 32) ? 0xFFFFFFFFULL : ((1ULL << f.bits) - 1);
+  raw = (uint32_t) ((payload >> f.shift) & mask);
+  if (f.bits >= 8)
+    return raw <= mask - 5;
+  return raw != mask;
+}
+
+bool RedarcRbus::field_value_(const FieldSpec &f, uint64_t payload, float &value) {
+  uint32_t raw;
+  if (!field_raw_(f, payload, raw))
+    return false;
+  value = (float) ((double) ((int64_t) raw + f.offset) * f.scale);
+  return true;
+}
+
+// Power from a "status" frame laid out as I = bytes0-3 (offset -1e6, mA), V = bytes4-5 (mV).
+void RedarcRbus::publish_power_(sensor::Sensor *s, PublishGate &gate, uint64_t payload, uint32_t now) {
+  static const FieldSpec CURRENT{0, 0, 32, -1000000, 0.001f};
+  static const FieldSpec VOLTAGE{0, 32, 16, 0, 0.001f};
+  float i, v;
+  if (s == nullptr || !field_value_(CURRENT, payload, i) || !field_value_(VOLTAGE, payload, v))
+    return;
+  const float w = roundf(v * i * 10.0f) / 10.0f;
+  if (gate.due(w, now))
+    s->publish_state(w);
+}
+
 // R-Bus telemetry frame = [4-byte J1939 29-bit CAN id][DLC=0x08][8-byte payload].
-// Field extraction matches the app: payload is one big-endian integer (byte0 = MSB) and
-// field = (value >> ((startByte-1)*8)) & ((1<<bitLen)-1), startByte counted from the last byte.
+// The app's CANBytesParser reads fields as (value >> ((startByte-1)*8 + startBit-1)) & mask over
+// the payload; that is plain little-endian extraction, so each field is a shift into a LE u64.
 void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   if (len < 13 || data[4] != 0x08)
     return;
@@ -354,25 +394,64 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   // Log each distinct PGN once per connection with its payload, so missing data
   // (e.g. voltage on a different PGN for some hardware) is easy to diagnose.
   if (this->seen_pgns_.insert(pgn).second)
-    ESP_LOGD(TAG, "RX R-Bus PGN %u payload=%02x%02x%02x%02x%02x%02x%02x%02x", pgn, pay[0], pay[1],
+    ESP_LOGD(TAG, "RX R-Bus PGN %u payload=%02x%02x%02x%02x%02x%02x%02x%02x", (unsigned) pgn, pay[0], pay[1],
              pay[2], pay[3], pay[4], pay[5], pay[6], pay[7]);
 
-  if (pgn == PGN_BATTERY_SOC) {
-    const uint8_t soc = pay[0];  // byte0, 0..100 %  (0xFF = not available)
-    if (this->soc_sensor_ != nullptr && soc != 0xFF)
-      this->soc_sensor_->publish_state(soc);
-  } else if (pgn == PGN_BATTERY_VOLTAGE) {
-    const uint16_t mv = (uint16_t) pay[4] | ((uint16_t) pay[5] << 8);  // bytes4-5 LE, millivolts
-    if (this->voltage_sensor_ != nullptr && mv != 0xFFFF)
-      this->voltage_sensor_->publish_state(mv / 1000.0f);
+  uint64_t payload = 0;
+  for (int i = 7; i >= 0; i--)
+    payload = (payload << 8) | pay[i];
+  const uint32_t now = millis();
+
+  for (auto &b : this->sensors_) {
+    float v;
+    if (b.field.pgn == pgn && field_value_(b.field, payload, v) && b.gate.due(v, now))
+      b.sensor->publish_state(v);
   }
+#ifdef USE_BINARY_SENSOR
+  for (auto &b : this->binary_sensors_) {
+    uint32_t raw;
+    // 2 = error: leave the last good state rather than guessing.
+    if (b.field.pgn == pgn && field_raw_(b.field, payload, raw) && raw <= 1 &&
+        b.gate.due((float) raw, now))
+      b.sensor->publish_state(raw == 1);
+  }
+#endif
+#ifdef USE_TEXT_SENSOR
+  for (auto &b : this->text_sensors_) {
+    uint32_t raw;
+    if (b.field.pgn != pgn || !field_raw_(b.field, payload, raw) || !b.gate.due((float) raw, now))
+      continue;
+    if (raw < b.names.size() && !b.names[raw].empty()) {
+      b.sensor->publish_state(b.names[raw]);
+    } else {
+      char buf[16];
+      snprintf(buf, sizeof(buf), "Unknown (%u)", (unsigned) raw);
+      b.sensor->publish_state(buf);
+    }
+  }
+#endif
+
+  if (pgn == PGN_BATTERY_SENSOR_MEASUREMENTS)
+    this->publish_power_(this->battery_power_sensor_, this->battery_power_gate_, payload, now);
+  else if (pgn == PGN_SOLAR_INPUT_STATUS)
+    this->publish_power_(this->solar_power_sensor_, this->solar_power_gate_, payload, now);
 }
 
 void RedarcRbus::dump_config() {
   ESP_LOGCONFIG(TAG, "REDARC RedVision R-Bus BLE proxy:");
   ESP_LOGCONFIG(TAG, "  Passkey configured: %s", YESNO(this->have_passkey_));
-  LOG_SENSOR("  ", "State of Charge", this->soc_sensor_);
-  LOG_SENSOR("  ", "Voltage", this->voltage_sensor_);
+  for (auto &b : this->sensors_)
+    LOG_SENSOR("  ", "Field", b.sensor);
+  LOG_SENSOR("  ", "Battery Power", this->battery_power_sensor_);
+  LOG_SENSOR("  ", "Solar Power", this->solar_power_sensor_);
+#ifdef USE_BINARY_SENSOR
+  for (auto &b : this->binary_sensors_)
+    LOG_BINARY_SENSOR("  ", "Field", b.sensor);
+#endif
+#ifdef USE_TEXT_SENSOR
+  for (auto &b : this->text_sensors_)
+    LOG_TEXT_SENSOR("  ", "Field", b.sensor);
+#endif
 }
 
 }  // namespace redarc_rbus

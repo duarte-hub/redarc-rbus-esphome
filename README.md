@@ -1,23 +1,17 @@
 # REDARC RedVision → ESPHome
 
-An [ESPHome](https://esphome.io) external component that reads battery telemetry
-from a **REDARC RedVision TVMS** (DISP4300 Display) over Bluetooth Low Energy and
-exposes it to Home Assistant — no wiring into the R-Bus CAN harness required.
-
-Currently published sensors:
-
-| Sensor | Unit | Source |
-| --- | --- | --- |
-| Battery State of Charge | % | R-Bus PGN 127236 |
-| Battery Voltage | V | R-Bus PGN 127498 |
+An [ESPHome](https://esphome.io) external component that reads battery, charger,
+inverter and alarm telemetry from a **REDARC RedVision TVMS** (DISP4300 Display)
+over Bluetooth Low Energy and exposes it to Home Assistant — no wiring into the
+R-Bus CAN harness required. See [Entities](#entities) for the full list.
 
 It can also **switch outputs** on/off (e.g. lights) by replaying the exact R-Bus
 command frames the RedVision app sends — see *Output control* below.
 
 This was built by reverse-engineering the RedVision app and the Display's BLE
 interface for **interoperability with hardware the owner already owns**. It is
-read-only: it never writes control/config to the Display, only the filter frames
-needed to make the gateway stream telemetry.
+read-only unless you configure `switch:` entities: it never writes configuration,
+only the filter frames needed to make the gateway stream telemetry.
 
 ## How it works
 
@@ -42,8 +36,11 @@ code on the Display's *Settings → Bluetooth* screen. This component:
 After the first successful pairing the bond is saved in the ESP32's flash, so it
 reconnects silently on every boot.
 
-Field decode follows the app's own parser: the payload is read as one big-endian
-integer and `field = (value >> ((startByte-1)*8)) & ((1<<bitLen)-1)`.
+Field decode follows the app's own parser, which amounts to little-endian
+extraction: `raw = (payload_le_u64 >> (byte*8 + bit)) & mask`, then
+`value = (raw + offset) * scale`. Raw values in the J1939 "not available /
+error" range are dropped. Field positions, offsets and scales come from the
+app's generated PGN catalogue.
 
 ## Install
 
@@ -166,8 +163,54 @@ Once bonded, the keys are stored and you're set until the next full erase.
 | --- | --- | --- |
 | `ble_client_id` | yes | ID of the `ble_client:` entry for the Display |
 | `passkey` | recommended | 6-digit pairing code shown on the Display |
-| `state_of_charge` | no | Sensor schema for battery SoC (%) |
-| `voltage` | no | Sensor schema for battery voltage (V) |
+| `status_led` | no | GPIO pin pulsed on BLE traffic |
+| `rssi` / `rssi_update_interval` | no | BLE link RSSI sensor, poll interval (default 60s) |
+| *any key in the sensor table below* | no | Sensor schema |
+
+## Entities
+
+All are optional; add only the ones you want. Which ones report data depends on
+the hardware on your R-Bus (e.g. no inverter → inverter entities stay unknown).
+Each entity publishes when its value changes, and at least once a minute
+otherwise. Values like voltage change on most frames, so add a
+`throttle_average` filter if you want fewer updates.
+
+**`sensor:`** (platform `redarc_rbus`, the hub):
+
+| Key | Unit | PGN | Notes |
+| --- | --- | --- | --- |
+| `state_of_charge` | % | 127236 | |
+| `state_of_health` | % | 127236 | not reported by every battery |
+| `time_remaining` | min | 127236 | positive = to full, negative = to flat |
+| `voltage` | V | 127234 | battery |
+| `current` | A | 127234 | negative = discharging |
+| `temperature` | °C | 127234 | battery sensor |
+| `battery_power` | W | 127234 | derived V × I |
+| `load_current` | A | 127616 | averaged |
+| `solar_voltage` / `solar_current` | V / A | 127496 | |
+| `solar_power` | W | 127496 | derived V × I |
+| `dc_input_voltage` / `dc_input_current` | V / A | 127494 | alternator / DC-DC input |
+| `ac_input_voltage` / `ac_input_current` | V / A | 127492 | mains charger input |
+| `charger_output_voltage` / `charger_output_current` | V / A | 127498 | |
+| `inverter_output_voltage` / `inverter_power` | V / W | 130288 | |
+| `battery_capacity` | Ah | 127232 | diagnostic |
+| `battery_max_charge_current` | A | 127232 | diagnostic |
+| `charger_max_output_current` | A | 128008 | diagnostic |
+| `low_battery_soc_setpoint` / `low_battery_voltage_setpoint` | % / V | 127242 | diagnostic |
+| `load_disconnect_voltage_off` / `_on` | V | 127240 | diagnostic |
+| `load_disconnect_soc_off` / `_on` | % | 127240 | diagnostic |
+
+**`binary_sensor:`** (platform `redarc_rbus`, with `redarc_rbus_id:`):
+`ac_input_active`, `dc_input_active`, `solar_input_active`, `charger_derating`,
+`inverter_on`, `low_battery_soc_alarm`, `low_battery_voltage_alarm`,
+`load_disconnect_active`.
+
+**`text_sensor:`** (platform `redarc_rbus`, with `redarc_rbus_id:`):
+`charging_stage` (Not Charging / Boost / Absorption / Float / …), `charging_mode`
+(Touring / Storage), `battery_chemistry`, `dc_input_trigger`,
+`load_disconnect_trigger`.
+
+See [`example.yaml`](example.yaml) for every entity configured.
 
 ## Output control (switches)
 
@@ -201,7 +244,7 @@ To get them for any output:
    The ON/OFF pair differs by a single byte. Paste each as a hex string.
 
 The switch is an *assumed-state* switch (it shows the last commanded state); live
-read-back from `device_output_status` is on the roadmap.
+read-back from the Digital IO Status PGN (130304) is on the roadmap.
 
 > Safety: these frames command a power-distribution box. Only use frames you
 > captured from your own unit, and label each switch clearly.
@@ -209,10 +252,12 @@ read-back from `device_output_status` is on the roadmap.
 ## Status / roadmap
 
 - ✅ State of Charge, voltage — decoded and verified against the live display.
+- ✅ Battery current/temperature/power, time remaining, solar/DC/AC inputs, charger
+  output, inverter, alarms, load disconnect, charging stage/mode — field layouts
+  from the app's PGN catalogue, checked against a real capture.
 - ✅ Output control — switch outputs on/off by replaying captured command frames.
-- ⏳ State of Health, time-to-full/flat, current, temperature — PGNs are known;
-  decode to be confirmed against the display and added.
-- ⏳ Live output state read-back (`device_output_status`) to drive non-assumed switches.
+- ⏳ Tank levels (analog IO channels; needs per-channel scaling).
+- ⏳ Live output state read-back (Digital IO Status, PGN 130304) to drive non-assumed switches.
 - ⏳ Channel-based switch config (specify an output number instead of raw frames),
   once a few more captured samples confirm the channel encoding.
 
