@@ -12,6 +12,7 @@
 #include <esp_gap_ble_api.h>
 #include <esp_gattc_api.h>
 
+#include <string>
 #include <vector>
 
 namespace esphome {
@@ -47,6 +48,11 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // Forget the stored bond and force a fresh pairing using the current passkey.
   // Call this (e.g. from a button in HA) after entering a freshly-shown rotating code.
   void pair_now();
+
+  // Set the Display's BLE MAC at runtime (e.g. from a text field in HA), as
+  // "AA:BB:CC:DD:EE:FF". Lets you point this hub at a unit without recompiling;
+  // the connection picks up on the next advertisement.
+  void set_remote_mac(const std::string &mac);
 
   // Write a raw R-Bus command frame to char 8001 (used by output switches).
   // Returns false if not connected/ready, so the switch can reflect the failure.

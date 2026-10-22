@@ -6,6 +6,7 @@
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 
 #include <cstring>
+#include <cstdio>
 
 namespace esphome {
 namespace redarc_rbus {
@@ -253,6 +254,22 @@ void RedarcRbus::set_passkey(uint32_t passkey) {
     esp_ble_passkey_reply(this->pending_bda_, true, passkey);
     this->passkey_pending_ = false;
   }
+}
+
+void RedarcRbus::set_remote_mac(const std::string &mac) {
+  unsigned b[6];
+  if (std::sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6) {
+    ESP_LOGW(TAG, "Ignoring invalid MAC '%s' (want AA:BB:CC:DD:EE:FF)", mac.c_str());
+    return;
+  }
+  uint64_t addr = 0;
+  for (int i = 0; i < 6; i++)
+    addr = (addr << 8) | (b[i] & 0xFF);
+  if (this->parent() == nullptr)
+    return;
+  ESP_LOGI(TAG, "Target MAC set to %s; connecting on next advertisement", mac.c_str());
+  this->parent()->set_address(addr);
+  this->parent()->set_state(espbt::ClientState::IDLE);  // let the tracker re-promote it
 }
 
 void RedarcRbus::pair_now() {
