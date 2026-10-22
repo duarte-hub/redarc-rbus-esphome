@@ -4,10 +4,14 @@ from esphome import pins
 from esphome.components import ble_client, sensor
 from esphome.const import (
     CONF_ID,
+    CONF_RSSI,
     CONF_VOLTAGE,
     DEVICE_CLASS_BATTERY,
+    DEVICE_CLASS_SIGNAL_STRENGTH,
     DEVICE_CLASS_VOLTAGE,
+    ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
+    UNIT_DECIBEL_MILLIWATT,
     UNIT_PERCENT,
     UNIT_VOLT,
 )
@@ -41,6 +45,13 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_VOLTAGE,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
+            cv.Optional(CONF_RSSI): sensor.sensor_schema(
+                unit_of_measurement=UNIT_DECIBEL_MILLIWATT,
+                accuracy_decimals=0,
+                device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
         }
     )
     .extend(ble_client.BLE_CLIENT_SCHEMA)
@@ -64,3 +75,6 @@ async def to_code(config):
     if CONF_VOLTAGE in config:
         sens = await sensor.new_sensor(config[CONF_VOLTAGE])
         cg.add(var.set_voltage_sensor(sens))
+    if CONF_RSSI in config:
+        sens = await sensor.new_sensor(config[CONF_RSSI])
+        cg.add(var.set_rssi_sensor(sens))

@@ -98,6 +98,13 @@ void RedarcRbus::loop() {
     this->led_off_at_ = 0;
   }
 
+  // Poll the live connection RSSI every 10 s (result arrives via gap_event_handler).
+  if (this->rssi_sensor_ != nullptr && this->ready() && this->parent() != nullptr &&
+      millis() - this->last_rssi_ms_ >= 10000) {
+    this->last_rssi_ms_ = millis();
+    esp_ble_gap_read_rssi(this->parent()->get_remote_bda());
+  }
+
   if (!this->sending_filters_)
     return;
   const uint32_t now = millis();
@@ -149,6 +156,11 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       }
       break;
     }
+    case ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT:
+      if (this->rssi_sensor_ != nullptr && param->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS &&
+          this->is_our_peer_(param->read_rssi_cmpl.remote_addr))
+        this->rssi_sensor_->publish_state(param->read_rssi_cmpl.rssi);
+      break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
       // Only treat auth completion for our Display as our bond.
       if (!this->is_our_peer_(param->ble_security.auth_cmpl.bd_addr))
