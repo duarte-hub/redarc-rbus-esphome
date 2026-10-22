@@ -377,6 +377,10 @@ void RedarcRbus::request_labels_() {
 
 // [channel][chunk index][6 characters]; chunks concatenate into the channel's label.
 void RedarcRbus::handle_label_(const uint8_t *pay) {
+  // Bound what we store: only answers to our request, real channel numbers, and the app's
+  // maximum of 8 chunks (data index 0-7), so a misbehaving node can't grow the map.
+  if (!this->labels_requested_ || pay[0] == 0 || pay[0] > 64 || pay[1] > 7)
+    return;
   std::string text;
   for (int i = 2; i < 8; i++) {
     if (pay[i] == 0x00 || pay[i] == 0xFF)
