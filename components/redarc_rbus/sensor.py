@@ -4,14 +4,10 @@ from esphome import pins
 from esphome.components import ble_client, sensor
 from esphome.const import (
     CONF_ID,
-    CONF_RSSI,
     CONF_VOLTAGE,
     DEVICE_CLASS_BATTERY,
-    DEVICE_CLASS_SIGNAL_STRENGTH,
     DEVICE_CLASS_VOLTAGE,
-    ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
-    UNIT_DECIBEL_MILLIWATT,
     UNIT_PERCENT,
     UNIT_VOLT,
 )
@@ -24,6 +20,7 @@ DEPENDENCIES = ["ble_client", "esp32_ble"]
 CONF_STATE_OF_CHARGE = "state_of_charge"
 CONF_PASSKEY = "passkey"
 CONF_STATUS_LED = "status_led"
+CONF_RSSI = "rssi"
 CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 
 CONFIG_SCHEMA = (
@@ -47,11 +44,11 @@ CONFIG_SCHEMA = (
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
             cv.Optional(CONF_RSSI): sensor.sensor_schema(
-                unit_of_measurement=UNIT_DECIBEL_MILLIWATT,
+                unit_of_measurement="dBm",
                 accuracy_decimals=0,
-                device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
+                device_class="signal_strength",
                 state_class=STATE_CLASS_MEASUREMENT,
-                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                entity_category="diagnostic",
             ),
             # How often to poll connection RSSI (set 0s to disable polling).
             cv.Optional(
