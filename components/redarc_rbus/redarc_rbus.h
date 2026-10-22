@@ -38,10 +38,9 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
                            esp_ble_gattc_cb_param_t *param) override;
   void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) override;
 
-  void set_passkey(uint32_t passkey) {
-    this->passkey_ = passkey;
-    this->have_passkey_ = true;
-  }
+  // Set the pairing passkey. If the Display is currently waiting at a passkey
+  // prompt, this answers it immediately (so you enter the code it shows *now*).
+  void set_passkey(uint32_t passkey);
   // Forget the stored bond and force a fresh pairing using the current passkey.
   // Call this (e.g. from a button in HA) after entering a freshly-shown rotating code.
   void pair_now();
@@ -66,6 +65,9 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
 
   uint32_t passkey_{0};
   bool have_passkey_{false};
+  uint32_t last_passkey_set_ms_{0};
+  bool passkey_pending_{false};     // Display is waiting for us to supply a passkey
+  esp_bd_addr_t pending_bda_{};     // peer that issued the pending passkey request
 
   uint16_t notify_handle_{0};  // char 8001 value handle
   uint16_t write_handle_{0};   // char 8002 value handle

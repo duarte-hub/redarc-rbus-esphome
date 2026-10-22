@@ -126,18 +126,28 @@ bool RedarcRbus::is_our_peer_(const uint8_t *bda) {
 
 void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
-    case ESP_GAP_BLE_PASSKEY_REQ_EVT:
-      // Only reply to a passkey request coming from our Display.
+    case ESP_GAP_BLE_PASSKEY_REQ_EVT: {
+      // Only handle a passkey request coming from our Display.
       if (!this->is_our_peer_(param->ble_security.ble_req.bd_addr))
         break;
-      if (this->have_passkey_) {
-        ESP_LOGI(TAG, "Passkey requested; replying with configured passkey");
-        esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, this->passkey_);
+      memcpy(this->pending_bda_, param->ble_security.ble_req.bd_addr, sizeof(esp_bd_addr_t));
+      // The Display shows a code that ROTATES, so a value entered long ago is
+      // stale. Only auto-answer if a passkey was entered in the last 25 s
+      // (i.e. you entered it and pressed Pair Now). Otherwise wait, and answer
+      // as soon as you enter the code the Display is showing now.
+      const bool fresh = this->have_passkey_ && (millis() - this->last_passkey_set_ms_ < 25000);
+      if (fresh) {
+        ESP_LOGI(TAG, "Passkey requested; replying with recently-entered code %06u",
+                 (unsigned) this->passkey_);
+        esp_ble_passkey_reply(this->pending_bda_, true, this->passkey_);
+        this->passkey_pending_ = false;
       } else {
-        ESP_LOGE(TAG, "Passkey requested but none configured! Set 'passkey:' in the config.");
-        esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, false, 0);
+        this->passkey_pending_ = true;
+        ESP_LOGW(TAG, "Display is requesting pairing. Enter the 6-digit code it is "
+                      "showing NOW into 'REDARC Pairing Code' (within ~30 s).");
       }
       break;
+    }
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
       // Only treat auth completion for our Display as our bond.
       if (!this->is_our_peer_(param->ble_security.auth_cmpl.bd_addr))
@@ -173,6 +183,7 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->notify_started_ = false;
       this->sending_filters_ = false;
       this->filter_idx_ = 0;
+      this->passkey_pending_ = false;
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -228,6 +239,19 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
     }
     default:
       break;
+  }
+}
+
+void RedarcRbus::set_passkey(uint32_t passkey) {
+  this->passkey_ = passkey;
+  this->have_passkey_ = true;
+  this->last_passkey_set_ms_ = millis();
+  // If the Display is already waiting at a passkey prompt, answer it now with
+  // the just-entered code. This is the path that makes a rotating code work.
+  if (this->passkey_pending_) {
+    ESP_LOGI(TAG, "Answering pending pairing with entered code %06u", (unsigned) passkey);
+    esp_ble_passkey_reply(this->pending_bda_, true, passkey);
+    this->passkey_pending_ = false;
   }
 }
 

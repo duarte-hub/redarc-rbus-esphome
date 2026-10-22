@@ -140,11 +140,20 @@ button:
       - lambda: "id(redarc_hub).pair_now();"
 ```
 
-To (re-)pair: open the Display's *Settings → Bluetooth* screen, type the code it
-shows into **REDARC Pairing Code** in HA, then press **REDARC Pair Now**. The
-component forgets any old bond, reconnects, and answers the Display's passkey
-challenge with the code you just entered. Once bonded, you're set until the next
-full erase.
+Because the code **rotates**, the component waits at the Display's passkey prompt
+(for ~30 s) for you to supply the code that is showing *at that moment*, instead
+of sending a stale one. Reliable sequence:
+
+1. Open the Display's *Settings → Bluetooth* screen (and close the phone app —
+   also "Forget This Device" on the phone so it doesn't grab the single slot).
+2. Press **REDARC Pair Now**. The ESP reconnects; the log shows
+   `Display is requesting pairing. Enter the 6-digit code it is showing NOW…`.
+3. Read the code the Display shows **now** and type it into **REDARC Pairing
+   Code** in HA. The component answers immediately → `Bonded with Display`.
+
+(If you instead enter the code first and press Pair Now within ~25 s, that also
+works — the component treats a just-entered code as fresh and answers at once.)
+Once bonded, the keys are stored and you're set until the next full erase.
 
 ## Configuration reference
 
