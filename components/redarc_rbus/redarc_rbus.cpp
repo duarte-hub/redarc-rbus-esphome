@@ -351,10 +351,11 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   const uint32_t pgn = (pf >= 240) ? (((uint32_t) dp << 16) | ((uint32_t) pf << 8) | ps)
                                    : (((uint32_t) dp << 16) | ((uint32_t) pf << 8));
 
-  // Log each distinct PGN once per connection, so missing data (e.g. voltage)
-  // is easy to diagnose: if 127498 never appears, that unit isn't sending it.
+  // Log each distinct PGN once per connection with its payload, so missing data
+  // (e.g. voltage on a different PGN for some hardware) is easy to diagnose.
   if (this->seen_pgns_.insert(pgn).second)
-    ESP_LOGD(TAG, "RX R-Bus PGN %u", pgn);
+    ESP_LOGD(TAG, "RX R-Bus PGN %u payload=%02x%02x%02x%02x%02x%02x%02x%02x", pgn, pay[0], pay[1],
+             pay[2], pay[3], pay[4], pay[5], pay[6], pay[7]);
 
   if (pgn == PGN_BATTERY_SOC) {
     const uint8_t soc = pay[0];  // byte0, 0..100 %  (0xFF = not available)
