@@ -29,8 +29,10 @@ static const char *const REDARC_CHAR_8001_UUID = "09022015-5160-4000-8001-524544
 static const char *const REDARC_CHAR_8002_UUID = "09022015-5160-4000-8002-524544415243";
 
 // R-Bus PGNs we decode (REDARC's own J1939 numbering, from the reversed app).
-static const uint32_t PGN_BATTERY_SOC = 127236;      // header 13 f1 04 .. ; payload byte0 = SoC %
-static const uint32_t PGN_BATTERY_VOLTAGE = 127498;  // header 03 f2 0a .. ; payload bytes4-5 LE = mV
+static const uint32_t PGN_BATTERY_SOC = 127236;      // payload byte0 = SoC %
+// battery_sensor_measurements: present on both the u-blox and the other module
+// generation (unit 1 also exposed voltage on 127498, but 127234 is common to both).
+static const uint32_t PGN_BATTERY_VOLTAGE = 127234;  // payload bytes4-5 LE = millivolts
 
 class RedarcRbus : public Component, public ble_client::BLEClientNode {
  public:
