@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome import pins
 from esphome.components import ble_client, sensor
 from esphome.const import (
     CONF_ID,
@@ -18,6 +19,7 @@ DEPENDENCIES = ["ble_client", "esp32_ble"]
 
 CONF_STATE_OF_CHARGE = "state_of_charge"
 CONF_PASSKEY = "passkey"
+CONF_STATUS_LED = "status_led"
 
 RedarcRbus = redarc_rbus_ns.class_(
     "RedarcRbus", cg.Component, ble_client.BLEClientNode
@@ -29,6 +31,8 @@ CONFIG_SCHEMA = (
             cv.GenerateID(): cv.declare_id(RedarcRbus),
             # 6-digit passkey shown on the Display's Settings -> Bluetooth screen.
             cv.Optional(CONF_PASSKEY): cv.int_range(min=0, max=999999),
+            # Optional activity LED, pulsed while BLE frames flow (e.g. onboard GPIO2).
+            cv.Optional(CONF_STATUS_LED): pins.gpio_output_pin_schema,
             cv.Optional(CONF_STATE_OF_CHARGE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_PERCENT,
                 accuracy_decimals=0,
@@ -55,6 +59,9 @@ async def to_code(config):
 
     if CONF_PASSKEY in config:
         cg.add(var.set_passkey(config[CONF_PASSKEY]))
+    if CONF_STATUS_LED in config:
+        pin = await cg.gpio_pin_expression(config[CONF_STATUS_LED])
+        cg.add(var.set_status_led(pin))
     if CONF_STATE_OF_CHARGE in config:
         sens = await sensor.new_sensor(config[CONF_STATE_OF_CHARGE])
         cg.add(var.set_soc_sensor(sens))

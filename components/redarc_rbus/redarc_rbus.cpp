@@ -57,7 +57,22 @@ static const uint8_t FILTERS[][12] = {
 static const size_t FILTER_COUNT = sizeof(FILTERS) / sizeof(FILTERS[0]);
 static const uint32_t FILTER_WRITE_INTERVAL_MS = 40;
 
-void RedarcRbus::setup() { this->configure_security_(); }
+void RedarcRbus::setup() {
+  this->configure_security_();
+  if (this->status_led_ != nullptr) {
+    this->status_led_->setup();
+    this->status_led_->digital_write(false);
+  }
+}
+
+// Briefly light the status LED to show BLE traffic. loop() turns it back off,
+// so continuous traffic makes it flicker ("flashing while talking over BT").
+void RedarcRbus::blink_activity_() {
+  if (this->status_led_ == nullptr)
+    return;
+  this->status_led_->digital_write(true);
+  this->led_off_at_ = millis() + 30;
+}
 
 void RedarcRbus::configure_security_() {
   // The Display only streams to a BONDED central. It uses legacy passkey pairing:
@@ -76,6 +91,12 @@ void RedarcRbus::configure_security_() {
 }
 
 void RedarcRbus::loop() {
+  // Turn the activity LED back off a short time after the last blink.
+  if (this->status_led_ != nullptr && this->led_off_at_ != 0 && millis() >= this->led_off_at_) {
+    this->status_led_->digital_write(false);
+    this->led_off_at_ = 0;
+  }
+
   if (!this->sending_filters_)
     return;
   const uint32_t now = millis();
@@ -91,6 +112,7 @@ void RedarcRbus::loop() {
                            ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
   this->filter_idx_++;
   this->last_write_ms_ = now;
+  this->blink_activity_();
 }
 
 // GAP events are delivered to every ble_client node, not just ours, so we must
@@ -151,6 +173,10 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->notify_started_ = false;
       this->sending_filters_ = false;
       this->filter_idx_ = 0;
+      if (this->status_led_ != nullptr) {
+        this->status_led_->digital_write(false);
+        this->led_off_at_ = 0;
+      }
       break;
     }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
@@ -194,8 +220,10 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
-      if (param->notify.handle == this->notify_handle_)
+      if (param->notify.handle == this->notify_handle_) {
+        this->blink_activity_();
         this->handle_frame_(param->notify.value, param->notify.value_len);
+      }
       break;
     }
     default:

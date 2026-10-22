@@ -3,6 +3,7 @@
 #ifdef USE_ESP32
 
 #include "esphome/core/component.h"
+#include "esphome/core/hal.h"
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sensor/sensor.h"
@@ -46,12 +47,19 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void pair_now();
   void set_soc_sensor(sensor::Sensor *s) { this->soc_sensor_ = s; }
   void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
+  // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
+  // blue LED on GPIO2 of a standard esp32dev board).
+  void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
 
  protected:
   void configure_security_();
   void start_notify_();
   void handle_frame_(const uint8_t *data, uint16_t len);
   bool is_our_peer_(const uint8_t *bda);
+  void blink_activity_();  // pulse the status LED on BLE traffic
+
+  GPIOPin *status_led_{nullptr};
+  uint32_t led_off_at_{0};
 
   sensor::Sensor *soc_sensor_{nullptr};
   sensor::Sensor *voltage_sensor_{nullptr};
