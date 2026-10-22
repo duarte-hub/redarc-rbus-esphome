@@ -157,6 +157,9 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // BLE connection interval requested once streaming starts. ESPHome's client otherwise runs
   // ~7.5-11 ms, which with the Display's steady notifications starves Wi-Fi on the shared radio.
   void set_conn_interval(uint32_t ms) { this->conn_interval_ms_ = ms; }
+  // Experimental: ask the IO node for channel labels after connecting (off by default: on a
+  // DISP4300 the stream stopped right after this request and the Display dropped the bond).
+  void set_read_channel_labels(bool on) { this->read_labels_ = on; }
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
   // blue LED on GPIO2 of a standard esp32dev board).
   void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
@@ -206,6 +209,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void request_labels_();
   void handle_label_(const uint8_t *pay);
   std::map<uint8_t, std::map<uint8_t, std::string>> labels_;  // channel -> chunk -> text
+  bool read_labels_{false};
   bool labels_requested_{false};
   uint32_t labels_due_ms_{0};    // when to send the request (after filter enrollment)
   uint32_t labels_dirty_ms_{0};  // last label frame; dump once they stop arriving

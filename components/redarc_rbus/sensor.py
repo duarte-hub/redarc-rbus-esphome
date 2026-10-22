@@ -14,6 +14,7 @@ CONF_STATUS_LED = "status_led"
 CONF_RSSI = "rssi"
 CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 CONF_CONNECTION_INTERVAL = "connection_interval"
+CONF_READ_CHANNEL_LABELS = "read_channel_labels"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
 CONF_ANALOG_CHANNELS = "analog_channels"
@@ -141,6 +142,9 @@ CONFIG_SCHEMA = (
             # Experimental: BLE connection interval to request once streaming (0ms = leave as
             # negotiated). Meant to leave the shared radio to Wi-Fi, but 75ms stopped telemetry on
             # a DISP4300, so it is off by default.
+            # Experimental: request IO channel labels after connecting and log them. Off by
+            # default — on a DISP4300 telemetry stopped right after this request.
+            cv.Optional(CONF_READ_CHANNEL_LABELS, default=False): cv.boolean,
             cv.Optional(CONF_CONNECTION_INTERVAL, default="0ms"): cv.All(
                 cv.positive_time_period_milliseconds,
                 cv.Range(max=cv.TimePeriod(milliseconds=1000)),
@@ -183,3 +187,4 @@ async def to_code(config):
         cg.add(var.set_rssi_sensor(sens))
     cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))
     cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))
+    cg.add(var.set_read_channel_labels(config[CONF_READ_CHANNEL_LABELS]))

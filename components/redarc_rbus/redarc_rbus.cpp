@@ -128,7 +128,8 @@ void RedarcRbus::loop() {
   if (this->filter_idx_ >= FILTER_COUNT) {
     this->sending_filters_ = false;
     ESP_LOGD(TAG, "Filter enrollment complete (%u frames)", (unsigned) FILTER_COUNT);
-    this->labels_due_ms_ = now + 2000;  // let the first status frames identify the IO node
+    if (this->read_labels_)
+      this->labels_due_ms_ = now + 2000;  // let the first status frames identify the IO node
     this->request_conn_interval_();
     return;
   }
