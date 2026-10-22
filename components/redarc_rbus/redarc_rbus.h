@@ -12,6 +12,7 @@
 #include <esp_gap_ble_api.h>
 #include <esp_gattc_api.h>
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   uint32_t last_passkey_set_ms_{0};
   bool passkey_pending_{false};     // Display is waiting for us to supply a passkey
   esp_bd_addr_t pending_bda_{};     // peer that issued the pending passkey request
+  std::set<uint32_t> seen_pgns_;    // which R-Bus PGNs have streamed (logged once each)
 
   uint16_t notify_handle_{0};  // char 8001 value handle
   uint16_t write_handle_{0};   // char 8002 value handle
