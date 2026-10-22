@@ -62,6 +62,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_soc_sensor(sensor::Sensor *s) { this->soc_sensor_ = s; }
   void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
+  void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
   // blue LED on GPIO2 of a standard esp32dev board).
   void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
@@ -79,6 +80,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   sensor::Sensor *soc_sensor_{nullptr};
   sensor::Sensor *voltage_sensor_{nullptr};
   sensor::Sensor *rssi_sensor_{nullptr};
+  uint32_t rssi_interval_ms_{60000};
   uint32_t last_rssi_ms_{0};
 
   uint32_t passkey_{0};

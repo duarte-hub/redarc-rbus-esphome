@@ -24,6 +24,7 @@ DEPENDENCIES = ["ble_client", "esp32_ble"]
 CONF_STATE_OF_CHARGE = "state_of_charge"
 CONF_PASSKEY = "passkey"
 CONF_STATUS_LED = "status_led"
+CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 
 CONFIG_SCHEMA = (
     cv.Schema(
@@ -52,6 +53,10 @@ CONFIG_SCHEMA = (
                 state_class=STATE_CLASS_MEASUREMENT,
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
             ),
+            # How often to poll connection RSSI (set 0s to disable polling).
+            cv.Optional(
+                CONF_RSSI_UPDATE_INTERVAL, default="60s"
+            ): cv.positive_time_period_milliseconds,
         }
     )
     .extend(ble_client.BLE_CLIENT_SCHEMA)
@@ -78,3 +83,4 @@ async def to_code(config):
     if CONF_RSSI in config:
         sens = await sensor.new_sensor(config[CONF_RSSI])
         cg.add(var.set_rssi_sensor(sens))
+    cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))

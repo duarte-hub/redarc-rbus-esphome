@@ -98,9 +98,10 @@ void RedarcRbus::loop() {
     this->led_off_at_ = 0;
   }
 
-  // Poll the live connection RSSI every 10 s (result arrives via gap_event_handler).
-  if (this->rssi_sensor_ != nullptr && this->ready() && this->parent() != nullptr &&
-      millis() - this->last_rssi_ms_ >= 10000) {
+  // Poll the live connection RSSI on the configured interval (result arrives via
+  // gap_event_handler). 0 disables polling.
+  if (this->rssi_sensor_ != nullptr && this->rssi_interval_ms_ != 0 && this->ready() &&
+      this->parent() != nullptr && millis() - this->last_rssi_ms_ >= this->rssi_interval_ms_) {
     this->last_rssi_ms_ = millis();
     esp_ble_gap_read_rssi(this->parent()->get_remote_bda());
   }
