@@ -5,7 +5,8 @@ from esphome.components import switch
 from . import RedarcRbus, redarc_rbus_ns
 
 CODEOWNERS = ["@duarte-hub"]
-DEPENDENCIES = ["redarc_rbus"]
+# The dependency on the hub is enforced by the `redarc_rbus_id` reference below
+# (cv.use_id), not by a top-level component, so no DEPENDENCIES entry here.
 
 CONF_REDARC_RBUS_ID = "redarc_rbus_id"
 CONF_ON_FRAME = "on_frame"
