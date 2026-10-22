@@ -9,6 +9,7 @@ CODEOWNERS = ["@duarte-hub"]
 CONF_REDARC_RBUS_ID = "redarc_rbus_id"
 CONF_CHANNEL_STATUS = "channel_status"
 CONF_CHANNEL = "channel"
+CONF_CHANNEL_NAMES = "channel_names"
 
 # Enum fields, names from the RedVision app's RBus*_Enum tables:
 # (pgn, byte, bit, bits, {raw: name}, icon).
@@ -57,6 +58,10 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Optional(key): text_sensor.text_sensor_schema(icon=f[5])
             for key, f in FIELDS.items()
         },
+        # Result of the `read_channel_names` button: "4=Name; 5=Name; ...".
+        cv.Optional(CONF_CHANNEL_NAMES): text_sensor.text_sensor_schema(
+            icon="mdi:tag-text-outline", entity_category="diagnostic"
+        ),
         cv.Optional(CONF_CHANNEL_STATUS): cv.ensure_list(
             text_sensor.text_sensor_schema(icon="mdi:information-outline").extend(
                 {cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=250)}
@@ -72,6 +77,9 @@ async def to_code(config):
         if key in config:
             sens = await text_sensor.new_text_sensor(config[key])
             cg.add(parent.add_text_sensor(sens, pgn, byte * 8 + bit, bits, 0, 0, 0, _table(names)))
+    if CONF_CHANNEL_NAMES in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_CHANNEL_NAMES])
+        cg.add(parent.set_labels_sensor(sens))
     for conf in config.get(CONF_CHANNEL_STATUS, []):
         sens = await text_sensor.new_text_sensor(conf)
         cg.add(parent.add_text_sensor(sens, 130304, 2, 6, conf[CONF_CHANNEL], 7, 1,

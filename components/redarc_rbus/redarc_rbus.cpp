@@ -109,17 +109,7 @@ void RedarcRbus::loop() {
   }
 
   const uint32_t now = millis();
-  if (!this->labels_requested_ && this->labels_due_ms_ != 0 && (int32_t) (now - this->labels_due_ms_) >= 0)
-    this->request_labels_();
-  if (this->labels_dirty_ms_ != 0 && now - this->labels_dirty_ms_ > 3000) {
-    this->labels_dirty_ms_ = 0;
-    for (auto &ch : this->labels_) {
-      std::string label;
-      for (auto &chunk : ch.second)
-        label += chunk.second;
-      ESP_LOGI(TAG, "IO channel %u label: \"%s\"", ch.first, label.c_str());
-    }
-  }
+  this->label_read_step_(now);
 
   if (!this->sending_filters_)
     return;
@@ -128,9 +118,12 @@ void RedarcRbus::loop() {
   if (this->filter_idx_ >= FILTER_COUNT) {
     this->sending_filters_ = false;
     ESP_LOGD(TAG, "Filter enrollment complete (%u frames)", (unsigned) FILTER_COUNT);
-    if (this->read_labels_)
-      this->labels_due_ms_ = now + 2000;  // let the first status frames identify the IO node
-    this->request_conn_interval_();
+    if (this->label_phase_ == LabelPhase::RESTORING) {
+      this->label_phase_ = LabelPhase::IDLE;
+      this->publish_labels_();
+    } else {
+      this->request_conn_interval_();
+    }
     return;
   }
   esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
@@ -224,9 +217,7 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->seen_pgns_.clear();
       this->source_addr_.clear();
       this->labels_.clear();
-      this->labels_requested_ = false;
-      this->labels_due_ms_ = 0;
-      this->labels_dirty_ms_ = 0;
+      this->label_phase_ = LabelPhase::IDLE;  // reconnect re-sends the standard filters
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -368,26 +359,78 @@ bool RedarcRbus::set_parameter(uint8_t dest, uint16_t spn, uint8_t index, uint32
   return this->send_command(frame);
 }
 
-// PGN Request (PGN 66304, PDU1) as built by the app's toRBusFramePGNRequest:
-// [ID: 0x2f, PF 0x03, dest, src 0xfa][DLC 8][requested PGN LE32, without data page][index 0][ff ff ff].
-// RBusNode.loadIOChannelGetLabelData sends one per node with index 0; the node answers with
-// "IO Channel Get Label Data" frames for its channels.
-void RedarcRbus::request_labels_() {
-  this->labels_requested_ = true;
-  const uint8_t dest = this->source_of(PGN_DIGITAL_IO_STATUS, 0x24);
-  const uint32_t req = PGN_IO_CHANNEL_GET_LABEL & 0xFFFF;
-  std::vector<uint8_t> frame = {0x2f, 0x03, dest, 0xfa, 0x08,
-                                (uint8_t) (req & 0xFF), (uint8_t) (req >> 8), 0x00, 0x00,
-                                0x00, 0xff, 0xff, 0xff};
-  ESP_LOGD(TAG, "Requesting IO channel labels from node 0x%02x", dest);
-  this->send_command(frame);
+// Reading channel labels mirrors the RedVision app's channel-detail read (ReadConfigService:
+// setIoDetailsFilters -> RBusNode.loadIOChannelGetLabelData -> setStandardFilters), using the
+// exact frames the app sent in a captured session:
+//  1. "iodetails" filters: gateway entries 0x00-0x0d cleared, 0x0e = forward PGNs 0xFCxx-0xFDxx
+//     only, so label replies don't compete with the normal telemetry stream.
+//  2. One PGN Request for "IO Channel Get Label Data" (0xFD04) to the IO node, in the app's
+//     format: [requested PGN LE16][00][00][index 00][00 00 00].
+//  3. Collect replies for a few seconds (the app's window was ~4 s).
+//  4. Restore the standard filter list (identical to the one sent at connect).
+static const size_t IODETAILS_FILTER_COUNT = 15;
+static const uint32_t LABEL_COLLECT_MS = 5000;
+
+void RedarcRbus::read_channel_labels() {
+  if (!this->ready() || this->sending_filters_ || this->label_phase_ != LabelPhase::IDLE) {
+    ESP_LOGW(TAG, "Can't read channel labels now (not connected, or busy)");
+    return;
+  }
+  ESP_LOGI(TAG, "Reading channel labels (telemetry pauses ~6 s)");
+  this->labels_.clear();
+  this->label_dest_ = this->source_of(PGN_DIGITAL_IO_STATUS, 0x24);
+  this->label_idx_ = 0;
+  this->label_phase_ = LabelPhase::FILTERING;
+}
+
+void RedarcRbus::label_read_step_(uint32_t now) {
+  switch (this->label_phase_) {
+    case LabelPhase::FILTERING: {
+      if (now - this->last_write_ms_ < FILTER_WRITE_INTERVAL_MS)
+        return;
+      if (this->label_idx_ < IODETAILS_FILTER_COUNT) {
+        uint8_t f[12] = {(uint8_t) this->label_idx_, 0x2a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        if (this->label_idx_ == 0x0e) {
+          const uint8_t io[10] = {0xa0, 0xfe, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x00, 0x00, 0x00};
+          memcpy(f + 2, io, sizeof(io));
+        }
+        esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
+                                 this->write_handle_, sizeof(f), f, ESP_GATT_WRITE_TYPE_NO_RSP,
+                                 ESP_GATT_AUTH_REQ_NONE);
+        this->label_idx_++;
+        this->last_write_ms_ = now;
+        return;
+      }
+      const uint16_t req = PGN_IO_CHANNEL_GET_LABEL & 0xFFFF;
+      std::vector<uint8_t> frame = {0x2f, 0x03, this->label_dest_, 0xfa, 0x08,
+                                    (uint8_t) (req & 0xFF), (uint8_t) (req >> 8), 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00};
+      ESP_LOGD(TAG, "Requesting IO channel labels from node 0x%02x", this->label_dest_);
+      this->send_command(frame);
+      this->label_until_ = now + LABEL_COLLECT_MS;
+      this->label_phase_ = LabelPhase::COLLECTING;
+      return;
+    }
+    case LabelPhase::COLLECTING:
+      if ((int32_t) (now - this->label_until_) < 0)
+        return;
+      // Always put the normal filters back, whatever arrived.
+      this->label_phase_ = LabelPhase::RESTORING;
+      this->filter_idx_ = 0;
+      this->last_write_ms_ = now;
+      this->sending_filters_ = true;
+      return;
+    default:
+      return;
+  }
 }
 
 // [channel][chunk index][6 characters]; chunks concatenate into the channel's label.
-void RedarcRbus::handle_label_(const uint8_t *pay) {
-  // Bound what we store: only answers to our request, real channel numbers, and the app's
-  // maximum of 8 chunks (data index 0-7), so a misbehaving node can't grow the map.
-  if (!this->labels_requested_ || pay[0] == 0 || pay[0] > 64 || pay[1] > 7)
+void RedarcRbus::handle_label_(const uint8_t src, const uint8_t *pay) {
+  // Bound what we store: only replies during our read, from the node we asked, real channel
+  // numbers, and the app's maximum of 8 chunks (data index 0-7).
+  if (this->label_phase_ != LabelPhase::COLLECTING || src != this->label_dest_ || pay[0] == 0 ||
+      pay[0] > 64 || pay[1] > 7)
     return;
   std::string text;
   for (int i = 2; i < 8; i++) {
@@ -396,7 +439,23 @@ void RedarcRbus::handle_label_(const uint8_t *pay) {
     text += (char) pay[i];
   }
   this->labels_[pay[0]][pay[1]] = text;
-  this->labels_dirty_ms_ = millis();
+}
+
+void RedarcRbus::publish_labels_() {
+  std::string all;
+  for (auto &ch : this->labels_) {
+    std::string label;
+    for (auto &chunk : ch.second)
+      label += chunk.second;
+    ESP_LOGI(TAG, "IO channel %u label: \"%s\"", ch.first, label.c_str());
+    if (all.size() < 220)
+      all += (all.empty() ? "" : "; ") + std::to_string(ch.first) + "=" + label;
+  }
+  ESP_LOGI(TAG, "Channel label read finished: %u channels", (unsigned) this->labels_.size());
+#ifdef USE_TEXT_SENSOR
+  if (this->labels_sensor_ != nullptr)
+    this->labels_sensor_->publish_state(all.empty() ? "none received" : all);
+#endif
 }
 
 void RedarcRbus::request_conn_interval_() {
@@ -487,6 +546,10 @@ void RedarcRbusSelect::dump_config() { LOG_SELECT("", "REDARC Setting", this); }
 void RedarcRbusButton::press_action() {
   if (this->parent_ == nullptr)
     return;
+  if (this->read_labels_) {
+    this->parent_->read_channel_labels();
+    return;
+  }
   const uint8_t dest =
       this->dest_pgn_ ? this->parent_->source_of(this->dest_pgn_, this->dest_fallback_) : this->dest_fallback_;
   this->parent_->set_parameter(dest, this->spn_, this->index_, this->value_);
@@ -584,7 +647,7 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   this->source_addr_[pgn] = hdr[3];
 
   if (pgn == PGN_IO_CHANNEL_GET_LABEL)
-    this->handle_label_(pay);
+    this->handle_label_(hdr[3], pay);
   if (pgn == PGN_ACKNOWLEDGEMENT)  // reply to our parameter sets: type, SPN, index, status
     ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
              pay[1] | (pay[2] << 8), pay[3], pay[4]);

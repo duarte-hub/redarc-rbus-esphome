@@ -163,9 +163,12 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // BLE connection interval requested once streaming starts. ESPHome's client otherwise runs
   // ~7.5-11 ms, which with the Display's steady notifications starves Wi-Fi on the shared radio.
   void set_conn_interval(uint32_t ms) { this->conn_interval_ms_ = ms; }
-  // Experimental: ask the IO node for channel labels after connecting (off by default: on a
-  // DISP4300 the stream stopped right after this request and the Display dropped the bond).
-  void set_read_channel_labels(bool on) { this->read_labels_ = on; }
+  // Read the IO channel labels (names shown on the Display) once, the way the RedVision app
+  // does; see label_read_step_(). Triggered by a button, never automatically.
+  void read_channel_labels();
+#ifdef USE_TEXT_SENSOR
+  void set_labels_sensor(text_sensor::TextSensor *s) { this->labels_sensor_ = s; }
+#endif
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
   // blue LED on GPIO2 of a standard esp32dev board).
   void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
@@ -212,15 +215,19 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   std::map<uint32_t, uint8_t> pgn_source_;   // PGN -> only node accepted for entities
   uint32_t min_publish_ms_{5000};
 
-  // IO channel labels (the names shown on the Display), read once per connection with a
-  // PGN Request for "IO Channel Get Label Data" and logged so channels can be identified.
-  void request_labels_();
-  void handle_label_(const uint8_t *pay);
+  // IO channel label read (button-triggered).
+  enum class LabelPhase { IDLE, FILTERING, COLLECTING, RESTORING };
+  void label_read_step_(uint32_t now);
+  void handle_label_(uint8_t src, const uint8_t *pay);
+  void publish_labels_();
   std::map<uint8_t, std::map<uint8_t, std::string>> labels_;  // channel -> chunk -> text
-  bool read_labels_{false};
-  bool labels_requested_{false};
-  uint32_t labels_due_ms_{0};    // when to send the request (after filter enrollment)
-  uint32_t labels_dirty_ms_{0};  // last label frame; dump once they stop arriving
+  LabelPhase label_phase_{LabelPhase::IDLE};
+  size_t label_idx_{0};
+  uint8_t label_dest_{0x24};
+  uint32_t label_until_{0};
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *labels_sensor_{nullptr};
+#endif
 
   sensor::Sensor *battery_power_sensor_{nullptr};
   sensor::Sensor *solar_power_sensor_{nullptr};
@@ -328,10 +335,12 @@ class RedarcRbusButton : public button::Button, public Component {
     this->dest_pgn_ = pgn;
     this->dest_fallback_ = fallback;
   }
+  void set_read_labels(bool on) { this->read_labels_ = on; }
   void dump_config() override;
 
  protected:
   void press_action() override;
+  bool read_labels_{false};
 
   RedarcRbus *parent_{nullptr};
   uint16_t spn_{0};
