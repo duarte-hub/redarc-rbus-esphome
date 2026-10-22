@@ -47,6 +47,8 @@ static const char *const REDARC_CHAR_8002_UUID = "09022015-5160-4000-8002-524544
 static const uint32_t PGN_BATTERY_SENSOR_MEASUREMENTS = 127234;  // I bytes0-3, V bytes4-5, T byte6
 static const uint32_t PGN_SOLAR_INPUT_STATUS = 127496;           // I bytes0-3, V bytes4-5
 static const uint32_t PGN_ACKNOWLEDGEMENT = 66560;
+static const uint32_t PGN_DIGITAL_IO_STATUS = 130304;
+static const uint32_t PGN_IO_CHANNEL_GET_LABEL = 130308;  // [channel][chunk][6 chars]
 
 // R-Bus broadcast destination (the app's "-1" address, masked to a byte).
 static const uint8_t RBUS_BROADCAST = 0xFF;
@@ -195,6 +197,15 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   };
   std::vector<ListenerBinding> listeners_;
   std::map<uint32_t, uint8_t> source_addr_;  // PGN -> node address that sends it
+
+  // IO channel labels (the names shown on the Display), read once per connection with a
+  // PGN Request for "IO Channel Get Label Data" and logged so channels can be identified.
+  void request_labels_();
+  void handle_label_(const uint8_t *pay);
+  std::map<uint8_t, std::map<uint8_t, std::string>> labels_;  // channel -> chunk -> text
+  bool labels_requested_{false};
+  uint32_t labels_due_ms_{0};    // when to send the request (after filter enrollment)
+  uint32_t labels_dirty_ms_{0};  // last label frame; dump once they stop arriving
 
   sensor::Sensor *battery_power_sensor_{nullptr};
   sensor::Sensor *solar_power_sensor_{nullptr};

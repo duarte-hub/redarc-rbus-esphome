@@ -108,14 +108,27 @@ void RedarcRbus::loop() {
     esp_ble_gap_read_rssi(this->parent()->get_remote_bda());
   }
 
+  const uint32_t now = millis();
+  if (!this->labels_requested_ && this->labels_due_ms_ != 0 && (int32_t) (now - this->labels_due_ms_) >= 0)
+    this->request_labels_();
+  if (this->labels_dirty_ms_ != 0 && now - this->labels_dirty_ms_ > 3000) {
+    this->labels_dirty_ms_ = 0;
+    for (auto &ch : this->labels_) {
+      std::string label;
+      for (auto &chunk : ch.second)
+        label += chunk.second;
+      ESP_LOGI(TAG, "IO channel %u label: \"%s\"", ch.first, label.c_str());
+    }
+  }
+
   if (!this->sending_filters_)
     return;
-  const uint32_t now = millis();
   if (now - this->last_write_ms_ < FILTER_WRITE_INTERVAL_MS)
     return;
   if (this->filter_idx_ >= FILTER_COUNT) {
     this->sending_filters_ = false;
     ESP_LOGD(TAG, "Filter enrollment complete (%u frames)", (unsigned) FILTER_COUNT);
+    this->labels_due_ms_ = now + 2000;  // let the first status frames identify the IO node
     return;
   }
   esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
@@ -202,6 +215,10 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->passkey_pending_ = false;
       this->seen_pgns_.clear();
       this->source_addr_.clear();
+      this->labels_.clear();
+      this->labels_requested_ = false;
+      this->labels_due_ms_ = 0;
+      this->labels_dirty_ms_ = 0;
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -341,6 +358,33 @@ bool RedarcRbus::set_parameter(uint8_t dest, uint16_t spn, uint8_t index, uint32
                                 (uint8_t) ((value >> 24) & 0xFF)};
   ESP_LOGI(TAG, "Set SPN %u index %u = %u -> node 0x%02x", spn, index, (unsigned) value, dest);
   return this->send_command(frame);
+}
+
+// PGN Request (PGN 66304, PDU1) as built by the app's toRBusFramePGNRequest:
+// [ID: 0x2f, PF 0x03, dest, src 0xfa][DLC 8][requested PGN LE32, without data page][index 0][ff ff ff].
+// RBusNode.loadIOChannelGetLabelData sends one per node with index 0; the node answers with
+// "IO Channel Get Label Data" frames for its channels.
+void RedarcRbus::request_labels_() {
+  this->labels_requested_ = true;
+  const uint8_t dest = this->source_of(PGN_DIGITAL_IO_STATUS, 0x24);
+  const uint32_t req = PGN_IO_CHANNEL_GET_LABEL & 0xFFFF;
+  std::vector<uint8_t> frame = {0x2f, 0x03, dest, 0xfa, 0x08,
+                                (uint8_t) (req & 0xFF), (uint8_t) (req >> 8), 0x00, 0x00,
+                                0x00, 0xff, 0xff, 0xff};
+  ESP_LOGD(TAG, "Requesting IO channel labels from node 0x%02x", dest);
+  this->send_command(frame);
+}
+
+// [channel][chunk index][6 characters]; chunks concatenate into the channel's label.
+void RedarcRbus::handle_label_(const uint8_t *pay) {
+  std::string text;
+  for (int i = 2; i < 8; i++) {
+    if (pay[i] == 0x00 || pay[i] == 0xFF)
+      break;
+    text += (char) pay[i];
+  }
+  this->labels_[pay[0]][pay[1]] = text;
+  this->labels_dirty_ms_ = millis();
 }
 
 uint8_t RedarcRbus::source_of(uint32_t pgn, uint8_t fallback) const {
@@ -507,6 +551,8 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   const uint32_t now = millis();
   this->source_addr_[pgn] = hdr[3];
 
+  if (pgn == PGN_IO_CHANNEL_GET_LABEL)
+    this->handle_label_(pay);
   if (pgn == PGN_ACKNOWLEDGEMENT)  // reply to our parameter sets: type, SPN, index, status
     ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
              pay[1] | (pay[2] << 8), pay[3], pay[4]);
