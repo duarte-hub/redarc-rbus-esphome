@@ -101,6 +101,24 @@ sensor:
       name: "Load Disconnect SoC Off"
     load_disconnect_soc_on:
       name: "Load Disconnect SoC On"
+    # History logs
+    solar_energy_today:
+      name: "Solar Energy Today"
+    solar_energy_yesterday:
+      name: "Solar Energy Yesterday"
+    soc_min_last_day:
+      name: "Battery SoC Min (Last Day)"
+    soc_max_last_day:
+      name: "Battery SoC Max (Last Day)"
+    # Analog IO channels (raw values). On a TVMS the tank probes are on 21/22;
+    # check against the Display and add unit/filters to suit.
+    analog_channels:
+      - channel: 21
+        name: "Tank 1 Level"
+        unit_of_measurement: "%"
+      - channel: 22
+        name: "Tank 2 Level"
+        unit_of_measurement: "%"
 
 binary_sensor:
   - platform: redarc_rbus
@@ -121,6 +139,16 @@ binary_sensor:
       name: "Low Battery Voltage Alarm"
     load_disconnect_active:
       name: "Load Disconnect Active"
+    # Live state of any IO channel (outputs and digital inputs).
+    digital_channels:
+      - channel: 15
+        name: "IO Channel 15"
+    # Over/under alarms configured on analog channels (e.g. tanks).
+    io_alarms:
+      - channel: 21
+        name: "Tank 1 Alarm"
+      - channel: 22
+        name: "Tank 2 Alarm"
 
 text_sensor:
   - platform: redarc_rbus
@@ -135,12 +163,37 @@ text_sensor:
       name: "DC Input Trigger"
     load_disconnect_trigger:
       name: "Load Disconnect Trigger"
+    # Why an output is in its state (Normal / Fuse Failed / Overridden by Load Disconnect ...).
+    channel_status:
+      - channel: 7
+        name: "Main Light Status"
 
-# Output control: each switch replays the exact R-Bus command frames the
-# RedVision app sends (captured from your unit) - on_frame / off_frame.
+# Settings the RedVision app can change; state follows the device.
+select:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub
+    charging_mode:
+      name: "Charging Mode"
+    dc_input_trigger:
+      name: "DC Input Trigger"
+
+button:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub
+    sync_soc_full:
+      name: "Sync Battery SoC to 100%"
+
+# Output control by IO channel number, with real on/off read-back.
+# Find a channel's number by toggling it in the app and watching the
+# "Ack from node ... SPN 203 index N" debug log line.
 switch:
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub
     name: "Main Light"
-    on_frame:  "2f0024fa08cb00030701000000"
-    off_frame: "2f0024fa08cb00030700000000"
+    channel: 7
+  # Legacy alternative: replay captured frames (assumed state).
+  # - platform: redarc_rbus
+  #   redarc_rbus_id: redarc_hub
+  #   name: "Main Light"
+  #   on_frame:  "2f0024fa08cb00030701000000"
+  #   off_frame: "2f0024fa08cb00030700000000"

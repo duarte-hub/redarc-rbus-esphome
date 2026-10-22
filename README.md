@@ -10,8 +10,8 @@ command frames the RedVision app sends — see *Output control* below.
 
 This was built by reverse-engineering the RedVision app and the Display's BLE
 interface for **interoperability with hardware the owner already owns**. It is
-read-only unless you configure `switch:` entities: it never writes configuration,
-only the filter frames needed to make the gateway stream telemetry.
+read-only unless you configure `switch:`, `select:` or `button:` entities, and those
+only send the same "set parameter" commands the RedVision user app sends.
 
 ## How it works
 
@@ -199,55 +199,80 @@ otherwise. Values like voltage change on most frames, so add a
 | `low_battery_soc_setpoint` / `low_battery_voltage_setpoint` | % / V | 127242 | diagnostic |
 | `load_disconnect_voltage_off` / `_on` | V | 127240 | diagnostic |
 | `load_disconnect_soc_off` / `_on` | % | 127240 | diagnostic |
+| `solar_energy_today` / `solar_energy_yesterday` | Wh | 130262 | daily solar log |
+| `soc_min_last_day` / `soc_max_last_day` | % | 130258 / 130260 | last completed day |
+| `analog_channels:` (list of `channel:` + sensor) | raw | 130306 | tank levels etc., see below |
 
 **`binary_sensor:`** (platform `redarc_rbus`, with `redarc_rbus_id:`):
 `ac_input_active`, `dc_input_active`, `solar_input_active`, `charger_derating`,
 `inverter_on`, `low_battery_soc_alarm`, `low_battery_voltage_alarm`,
-`load_disconnect_active`.
+`load_disconnect_active`; plus lists of `channel:` entries:
+`digital_channels` (live state of any IO channel, PGN 130304) and `io_alarms`
+(analog channel over/under alarm, PGN 130311).
 
 **`text_sensor:`** (platform `redarc_rbus`, with `redarc_rbus_id:`):
 `charging_stage` (Not Charging / Boost / Absorption / Float / …), `charging_mode`
 (Touring / Storage), `battery_chemistry`, `dc_input_trigger`,
-`load_disconnect_trigger`.
+`load_disconnect_trigger`; plus `channel_status` (list of `channel:` entries): why an
+output is in its state (Normal, Fuse Failed, Overridden by Load Disconnect, …).
+
+**`select:`** (platform `redarc_rbus`, with `redarc_rbus_id:`): `charging_mode`
+(Touring / Storage) and `dc_input_trigger` — settings the app changes; they follow the
+device's reported value.
+
+**`button:`** (platform `redarc_rbus`, with `redarc_rbus_id:`): `sync_soc_full` — tells
+the battery monitor the battery is full (the app's "sync SoC to 100 %").
+
+### IO channels
+
+A TVMS numbers all IO from 1: outputs and digital inputs first (1–16 on the
+distribution box), then analog channels (17+, e.g. tank probes on 21 and 22).
+Analog values are raw: tank probes read in % (0/25/50/75/100 for a 5-pin probe),
+other channels may be millivolts — compare with the Display and add a
+`unit_of_measurement` / `filters` to suit.
 
 See [`example.yaml`](example.yaml) for every entity configured.
 
 ## Output control (switches)
 
-The TVMS switches loads when the app writes a `power_port_control` /
-`lighting_control_command` R-Bus frame to char 8001. These are plaintext and
-need no extra authentication beyond the bond. Rather than guess the channel
-encoding, the `switch` platform **replays the exact bytes** the app sends, so it
-can only ever do what the real app did — no risk of hitting the wrong channel.
+Outputs are switched exactly the way the app's control screen does it: an
+**RBUS Parameter Set** (PGN 65536) for SPN 203 (*Digital IO State*) with the IO
+channel as the index and 1/0 as the value, sent to the node that owns the channel.
+The switch then follows the real state from Digital IO Status (PGN 130304), so
+changes made on the Display or in the app show up in Home Assistant too.
 
 ```yaml
 switch:
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub        # id of your sensor-platform hub
     name: "Main Light"
-    on_frame:  "2f0024fa08cb00030701000000"
-    off_frame: "2f0024fa08cb00030700000000"
+    channel: 7
 ```
 
-### Capturing frames for your outputs
+To find an output's channel, toggle it in the RedVision app while watching the
+ESPHome logs: the node acknowledges with
+`Ack from node 0x24: type 1 SPN 203 index 7 status 0` (index = channel). The
+destination node is learned from the bus; set `node_address:` to override it.
 
-`on_frame` / `off_frame` are the 13-byte R-Bus frames written to char 8001.
-To get them for any output:
+The older raw-frame mode (`on_frame` / `off_frame`, assumed state) still works:
+`2f0024fa08cb00030701000000` is exactly the frame `channel: 7` builds for ON.
 
-1. Take a PacketLogger capture (as for telemetry) while you toggle **one** output
-   ON then OFF in the RedVision app.
-2. Pull the two writes to handle `0x0020` that are unique and ~seconds apart:
-   ```
-   tshark -r capture.pklg -Y "btatt.opcode==0x52 && btatt.handle==0x0020" \
-          -T fields -e frame.time_relative -e btatt.value
-   ```
-   The ON/OFF pair differs by a single byte. Paste each as a hex string.
+> Safety: these commands switch a power-distribution box. Label each switch
+> clearly and only map channels you have identified on your own unit.
 
-The switch is an *assumed-state* switch (it shows the last commanded state); live
-read-back from the Digital IO Status PGN (130304) is on the roadmap.
+## Settings
 
-> Safety: these frames command a power-distribution box. Only use frames you
-> captured from your own unit, and label each switch clearly.
+`select:` and `button:` entities send only the settings the RedVision *user* app
+itself changes, with the same SPN, index and destination:
+
+| Entity | SPN | Sent to |
+| --- | --- | --- |
+| `charging_mode` | 67 | broadcast (0xFF), as the app does |
+| `dc_input_trigger` | 104 | the charger node (sender of PGN 127494) |
+| `sync_soc_full` | 21 = 100 | the battery monitor (sender of PGN 127236) |
+
+Thresholds such as low-battery alarms and load-disconnect points are only changed
+by REDARC's installer app, so they are exposed read-only.
 
 ## Status / roadmap
 
@@ -255,11 +280,10 @@ read-back from the Digital IO Status PGN (130304) is on the roadmap.
 - ✅ Battery current/temperature/power, time remaining, solar/DC/AC inputs, charger
   output, inverter, alarms, load disconnect, charging stage/mode — field layouts
   from the app's PGN catalogue, checked against a real capture.
-- ✅ Output control — switch outputs on/off by replaying captured command frames.
-- ⏳ Tank levels (analog IO channels; needs per-channel scaling).
-- ⏳ Live output state read-back (Digital IO Status, PGN 130304) to drive non-assumed switches.
-- ⏳ Channel-based switch config (specify an output number instead of raw frames),
-  once a few more captured samples confirm the channel encoding.
+- ✅ Output control by channel with live read-back, and per-channel status/origin.
+- ✅ Analog channels (tank levels), IO alarms, daily solar Wh, SoC history.
+- ✅ Charging mode, DC input trigger, SoC sync — the user app's own settings.
+- ⏳ Dimmable / RGBW outputs (not present on the developer's unit, so unverified).
 
 ## Legal
 

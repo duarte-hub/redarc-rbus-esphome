@@ -7,6 +7,8 @@ from . import RedarcRbus
 CODEOWNERS = ["@duarte-hub"]
 
 CONF_REDARC_RBUS_ID = "redarc_rbus_id"
+CONF_CHANNEL_STATUS = "channel_status"
+CONF_CHANNEL = "channel"
 
 # Enum fields, names from the RedVision app's RBus*_Enum tables:
 # (pgn, byte, bit, bits, {raw: name}, icon).
@@ -31,6 +33,23 @@ FIELDS = {
     }, "mdi:power-plug-off"),
 }
 
+# Why an IO channel is in its current state: the 6-bit "origin" next to each channel's state
+# in Digital IO Status (130304), names from RBusDigitalIOStateOrigin_Enum.
+CHANNEL_ORIGIN = {
+    0: "Normal", 1: "Fuse Failed / Not Present", 2: "Overcurrent / Overtemperature",
+    3: "Not Connected", 4: "Overridden by User", 5: "Overridden by Logic",
+    6: "Overridden by Load Disconnect", 7: "Overridden by Master Switch",
+    8: "Overridden by Local Control", 9: "Overridden by Charging Mode",
+    10: "Communications Error", 11: "Internal Error", 12: "Voltage Error", 13: "Current Error",
+    14: "Temperature Error", 15: "Momentary Input Failure", 16: "Overridden by System Fault",
+    62: "Channel Disabled",
+}
+
+
+def _table(names):
+    return [names.get(i, "") for i in range(max(names) + 1)]
+
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_REDARC_RBUS_ID): cv.use_id(RedarcRbus),
@@ -38,6 +57,11 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Optional(key): text_sensor.text_sensor_schema(icon=f[5])
             for key, f in FIELDS.items()
         },
+        cv.Optional(CONF_CHANNEL_STATUS): cv.ensure_list(
+            text_sensor.text_sensor_schema(icon="mdi:information-outline").extend(
+                {cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=250)}
+            )
+        ),
     }
 )
 
@@ -47,5 +71,8 @@ async def to_code(config):
     for key, (pgn, byte, bit, bits, names, _) in FIELDS.items():
         if key in config:
             sens = await text_sensor.new_text_sensor(config[key])
-            table = [names.get(i, "") for i in range(max(names) + 1)]
-            cg.add(parent.add_text_sensor(sens, pgn, byte * 8 + bit, bits, table))
+            cg.add(parent.add_text_sensor(sens, pgn, byte * 8 + bit, bits, 0, 0, 0, _table(names)))
+    for conf in config.get(CONF_CHANNEL_STATUS, []):
+        sens = await text_sensor.new_text_sensor(conf)
+        cg.add(parent.add_text_sensor(sens, 130304, 2, 6, conf[CONF_CHANNEL], 7, 1,
+                                      _table(CHANNEL_ORIGIN)))

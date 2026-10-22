@@ -201,6 +201,7 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->filter_idx_ = 0;
       this->passkey_pending_ = false;
       this->seen_pgns_.clear();
+      this->source_addr_.clear();
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -321,13 +322,107 @@ bool RedarcRbus::send_command(const std::vector<uint8_t> &frame) {
   return true;
 }
 
-void RedarcRbusSwitch::write_state(bool state) {
-  const std::vector<uint8_t> &frame = state ? this->on_frame_ : this->off_frame_;
-  if (this->parent_ != nullptr && this->parent_->send_command(frame))
-    this->publish_state(state);  // optimistic; no device read-back yet
+// "RBUS Parameter Set" (PGN 65536, PDU1) as built by the app's toRBusFrameSetSPN, e.g. the
+// captured Main Light ON frame 2f 00 24 fa | 08 | cb 00 | 03 | 07 | 01 00 00 00:
+// [ID: 0x2f, PF 0x00, dest, src 0xfa][DLC 8][SPN LE16][priority 3][index][value LE32].
+bool RedarcRbus::set_parameter(uint8_t dest, uint16_t spn, uint8_t index, uint32_t value) {
+  std::vector<uint8_t> frame = {0x2f,
+                                0x00,
+                                dest,
+                                0xfa,
+                                0x08,
+                                (uint8_t) (spn & 0xFF),
+                                (uint8_t) (spn >> 8),
+                                0x03,
+                                index,
+                                (uint8_t) (value & 0xFF),
+                                (uint8_t) ((value >> 8) & 0xFF),
+                                (uint8_t) ((value >> 16) & 0xFF),
+                                (uint8_t) ((value >> 24) & 0xFF)};
+  ESP_LOGI(TAG, "Set SPN %u index %u = %u -> node 0x%02x", spn, index, (unsigned) value, dest);
+  return this->send_command(frame);
 }
 
-void RedarcRbusSwitch::dump_config() { LOG_SWITCH("", "REDARC Output Switch", this); }
+uint8_t RedarcRbus::source_of(uint32_t pgn, uint8_t fallback) const {
+  auto it = this->source_addr_.find(pgn);
+  return it == this->source_addr_.end() ? fallback : it->second;
+}
+
+void RedarcRbusSwitch::write_state(bool state) {
+  if (this->parent_ == nullptr)
+    return;
+  if (this->channel_ == 0) {
+    const std::vector<uint8_t> &frame = state ? this->on_frame_ : this->off_frame_;
+    if (this->parent_->send_command(frame))
+      this->publish_state(state);  // optimistic; raw frames have no read-back
+    return;
+  }
+  const uint8_t dest = this->node_address_ >= 0 ? (uint8_t) this->node_address_
+                                                : this->parent_->source_of(130304, 0x24);
+  // SPN 203 = Digital IO State; index = IO channel (app: ControlNotifier.toggleChannelState).
+  if (this->parent_->set_parameter(dest, 203, this->channel_, state ? 1 : 0)) {
+    this->commanded_ = state;
+    this->hold_until_ = millis() + COMMAND_HOLD_MS;
+    this->publish_state(state);
+  }
+}
+
+void RedarcRbusSwitch::on_raw(uint32_t raw) {
+  if (raw > 1)
+    return;  // 2 = error
+  const bool state = raw == 1;
+  if (state != this->commanded_ && (int32_t) (millis() - this->hold_until_) < 0)
+    return;  // still waiting for the node to report the commanded state
+  this->hold_until_ = 0;
+  this->commanded_ = state;
+  if (!this->has_state() || state != this->state)
+    this->publish_state(state);
+}
+
+void RedarcRbusSwitch::dump_config() {
+  LOG_SWITCH("", "REDARC Output Switch", this);
+  if (this->channel_ != 0)
+    ESP_LOGCONFIG(TAG, "  IO channel: %u", this->channel_);
+}
+
+#ifdef USE_SELECT
+void RedarcRbusSelect::control(size_t index) {
+  if (this->parent_ == nullptr)
+    return;
+  const uint8_t dest =
+      this->dest_pgn_ ? this->parent_->source_of(this->dest_pgn_, this->dest_fallback_) : this->dest_fallback_;
+  if (this->parent_->set_parameter(dest, this->spn_, 0, (uint32_t) index)) {
+    this->commanded_ = index;
+    this->hold_until_ = millis() + COMMAND_HOLD_MS;
+    this->publish_state(index);
+  }
+}
+
+void RedarcRbusSelect::on_raw(uint32_t raw) {
+  if (raw >= this->size())
+    return;
+  if (raw != this->commanded_ && (int32_t) (millis() - this->hold_until_) < 0)
+    return;
+  this->hold_until_ = 0;
+  this->commanded_ = raw;
+  if (!this->has_state() || this->active_index_ != raw)
+    this->publish_state((size_t) raw);
+}
+
+void RedarcRbusSelect::dump_config() { LOG_SELECT("", "REDARC Setting", this); }
+#endif
+
+#ifdef USE_BUTTON
+void RedarcRbusButton::press_action() {
+  if (this->parent_ == nullptr)
+    return;
+  const uint8_t dest =
+      this->dest_pgn_ ? this->parent_->source_of(this->dest_pgn_, this->dest_fallback_) : this->dest_fallback_;
+  this->parent_->set_parameter(dest, this->spn_, this->index_, this->value_);
+}
+
+void RedarcRbusButton::dump_config() { LOG_BUTTON("", "REDARC Action", this); }
+#endif
 
 void RedarcRbus::start_notify_() {
   if (this->notify_started_ || !this->have_handles_ || !this->bonded_)
@@ -349,8 +444,17 @@ bool PublishGate::due(float v, uint32_t now) {
 // J1939 reserves the top of each field's range: for >=8-bit fields 0xFB..0xFF (per byte)
 // mean error / not available; for short fields the all-ones value means not available.
 bool RedarcRbus::field_raw_(const FieldSpec &f, uint64_t payload, uint32_t &raw) {
+  const uint8_t index = payload & 0xFF;  // byte 0: log frame number / first IO channel
+  if (f.mux >= 0 && index != f.mux)
+    return false;
+  uint32_t shift = f.shift;
+  if (f.channel != 0) {
+    if (f.channel < index || f.channel >= index + f.per_frame)
+      return false;
+    shift += (1 + (f.channel - index) * f.slot_bytes) * 8;
+  }
   const uint64_t mask = (f.bits >= 32) ? 0xFFFFFFFFULL : ((1ULL << f.bits) - 1);
-  raw = (uint32_t) ((payload >> f.shift) & mask);
+  raw = (uint32_t) ((payload >> shift) & mask);
   if (f.bits >= 8)
     return raw <= mask - 5;
   return raw != mask;
@@ -401,6 +505,17 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   for (int i = 7; i >= 0; i--)
     payload = (payload << 8) | pay[i];
   const uint32_t now = millis();
+  this->source_addr_[pgn] = hdr[3];
+
+  if (pgn == PGN_ACKNOWLEDGEMENT)  // reply to our parameter sets: type, SPN, index, status
+    ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
+             pay[1] | (pay[2] << 8), pay[3], pay[4]);
+
+  for (auto &b : this->listeners_) {
+    uint32_t raw;
+    if (b.field.pgn == pgn && field_raw_(b.field, payload, raw))
+      b.listener->on_raw(raw);
+  }
 
   for (auto &b : this->sensors_) {
     float v;
@@ -442,6 +557,7 @@ void RedarcRbus::dump_config() {
   ESP_LOGCONFIG(TAG, "  Passkey configured: %s", YESNO(this->have_passkey_));
   for (auto &b : this->sensors_)
     LOG_SENSOR("  ", "Field", b.sensor);
+  ESP_LOGCONFIG(TAG, "  Control read-back bindings: %u", (unsigned) this->listeners_.size());
   LOG_SENSOR("  ", "Battery Power", this->battery_power_sensor_);
   LOG_SENSOR("  ", "Solar Power", this->solar_power_sensor_);
 #ifdef USE_BINARY_SENSOR
