@@ -220,7 +220,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
 
   sensor::Sensor *rssi_sensor_{nullptr};
   uint32_t rssi_interval_ms_{60000};
-  uint32_t conn_interval_ms_{75};
+  uint32_t conn_interval_ms_{0};
   void request_conn_interval_();
   uint32_t last_rssi_ms_{0};
 

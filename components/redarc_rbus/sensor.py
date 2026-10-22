@@ -138,9 +138,10 @@ CONFIG_SCHEMA = (
             cv.Optional(
                 CONF_RSSI_UPDATE_INTERVAL, default="60s"
             ): cv.positive_time_period_milliseconds,
-            # BLE connection interval to request once streaming (0ms = leave as negotiated).
-            # Longer intervals leave the shared radio to Wi-Fi; telemetry still arrives in batches.
-            cv.Optional(CONF_CONNECTION_INTERVAL, default="75ms"): cv.All(
+            # Experimental: BLE connection interval to request once streaming (0ms = leave as
+            # negotiated). Meant to leave the shared radio to Wi-Fi, but 75ms stopped telemetry on
+            # a DISP4300, so it is off by default.
+            cv.Optional(CONF_CONNECTION_INTERVAL, default="0ms"): cv.All(
                 cv.positive_time_period_milliseconds,
                 cv.Range(max=cv.TimePeriod(milliseconds=1000)),
             ),
