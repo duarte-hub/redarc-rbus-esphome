@@ -154,6 +154,9 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_solar_power_sensor(sensor::Sensor *s) { this->solar_power_sensor_ = s; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
+  // BLE connection interval requested once streaming starts. ESPHome's client otherwise runs
+  // ~7.5-11 ms, which with the Display's steady notifications starves Wi-Fi on the shared radio.
+  void set_conn_interval(uint32_t ms) { this->conn_interval_ms_ = ms; }
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
   // blue LED on GPIO2 of a standard esp32dev board).
   void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
@@ -217,6 +220,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
 
   sensor::Sensor *rssi_sensor_{nullptr};
   uint32_t rssi_interval_ms_{60000};
+  uint32_t conn_interval_ms_{75};
+  void request_conn_interval_();
   uint32_t last_rssi_ms_{0};
 
   uint32_t passkey_{0};

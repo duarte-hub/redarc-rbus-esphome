@@ -13,6 +13,7 @@ CONF_PASSKEY = "passkey"
 CONF_STATUS_LED = "status_led"
 CONF_RSSI = "rssi"
 CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
+CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
 CONF_ANALOG_CHANNELS = "analog_channels"
@@ -137,6 +138,12 @@ CONFIG_SCHEMA = (
             cv.Optional(
                 CONF_RSSI_UPDATE_INTERVAL, default="60s"
             ): cv.positive_time_period_milliseconds,
+            # BLE connection interval to request once streaming (0ms = leave as negotiated).
+            # Longer intervals leave the shared radio to Wi-Fi; telemetry still arrives in batches.
+            cv.Optional(CONF_CONNECTION_INTERVAL, default="75ms"): cv.All(
+                cv.positive_time_period_milliseconds,
+                cv.Range(max=cv.TimePeriod(milliseconds=1000)),
+            ),
         }
     )
     .extend(ble_client.BLE_CLIENT_SCHEMA)
@@ -174,3 +181,4 @@ async def to_code(config):
         sens = await sensor.new_sensor(config[CONF_RSSI])
         cg.add(var.set_rssi_sensor(sens))
     cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))
+    cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))

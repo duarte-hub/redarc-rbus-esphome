@@ -129,6 +129,7 @@ void RedarcRbus::loop() {
     this->sending_filters_ = false;
     ESP_LOGD(TAG, "Filter enrollment complete (%u frames)", (unsigned) FILTER_COUNT);
     this->labels_due_ms_ = now + 2000;  // let the first status frames identify the IO node
+    this->request_conn_interval_();
     return;
   }
   esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
@@ -172,6 +173,12 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       }
       break;
     }
+    case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
+      if (this->is_our_peer_(param->update_conn_params.bda))
+        ESP_LOGI(TAG, "BLE connection params: status %d, interval %.2f ms, latency %u, timeout %u ms",
+                 param->update_conn_params.status, param->update_conn_params.conn_int * 1.25f,
+                 param->update_conn_params.latency, param->update_conn_params.timeout * 10);
+      break;
     case ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT:
       if (this->rssi_sensor_ != nullptr && param->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS &&
           this->is_our_peer_(param->read_rssi_cmpl.remote_addr))
@@ -389,6 +396,21 @@ void RedarcRbus::handle_label_(const uint8_t *pay) {
   }
   this->labels_[pay[0]][pay[1]] = text;
   this->labels_dirty_ms_ = millis();
+}
+
+void RedarcRbus::request_conn_interval_() {
+  if (this->conn_interval_ms_ == 0 || this->parent() == nullptr)
+    return;
+  // Units: interval 1.25 ms, supervision timeout 10 ms. Allow +25 ms of slack for the peer.
+  esp_ble_conn_update_params_t p = {};
+  memcpy(p.bda, this->parent()->get_remote_bda(), sizeof(esp_bd_addr_t));
+  p.min_int = (uint16_t) (this->conn_interval_ms_ * 4 / 5);
+  p.max_int = p.min_int + 20;
+  p.latency = 0;
+  p.timeout = 600;  // 6 s
+  ESP_LOGD(TAG, "Requesting BLE connection interval %u-%u ms", (unsigned) this->conn_interval_ms_,
+           (unsigned) (this->conn_interval_ms_ + 25));
+  esp_ble_gap_update_conn_params(&p);
 }
 
 uint8_t RedarcRbus::source_of(uint32_t pgn, uint8_t fallback) const {
