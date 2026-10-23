@@ -335,6 +335,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   uint32_t passkey_{0};
   bool have_passkey_{false};
   uint32_t last_passkey_set_ms_{0};
+  bool setup_done_{false};          // set_passkey() calls before this are the YAML default
   bool passkey_pending_{false};     // Display is waiting for us to supply a passkey
   esp_bd_addr_t pending_bda_{};     // peer that issued the pending passkey request
   std::set<uint32_t> seen_pgns_;    // which R-Bus PGNs have streamed (logged once each)

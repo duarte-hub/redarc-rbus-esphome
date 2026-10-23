@@ -70,6 +70,7 @@ static const uint32_t PUBLISH_HEARTBEAT_MS = 60000;
 
 void RedarcRbus::setup() {
   this->configure_security_();
+  this->setup_done_ = true;
   this->set_link_status_("Searching");
   if (this->status_led_ != nullptr) {
     this->status_led_->setup();
@@ -270,7 +271,8 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       // stale. Only auto-answer if a passkey was entered in the last 25 s
       // (i.e. you entered it and pressed Pair Now). Otherwise wait, and answer
       // as soon as you enter the code the Display is showing now.
-      const bool fresh = this->have_passkey_ && (millis() - this->last_passkey_set_ms_ < 25000);
+      const bool fresh = this->have_passkey_ && this->last_passkey_set_ms_ != 0 &&
+                         (millis() - this->last_passkey_set_ms_ < 25000);
       if (fresh) {
         ESP_LOGI(TAG, "Passkey requested; replying with recently-entered code %06u",
                  (unsigned) this->passkey_);
@@ -450,6 +452,10 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
 void RedarcRbus::set_passkey(uint32_t passkey) {
   this->passkey_ = passkey;
   this->have_passkey_ = true;
+  // The code rotates, so only a code entered while running counts as fresh. The YAML
+  // `passkey:` is applied before setup() and must not be sent at the first connect after boot.
+  if (!this->setup_done_)
+    return;
   this->last_passkey_set_ms_ = millis();
   // If the Display is already waiting at a passkey prompt, answer it now with
   // the just-entered code. This is the path that makes a rotating code work.
