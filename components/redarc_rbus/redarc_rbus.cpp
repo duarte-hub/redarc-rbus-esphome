@@ -338,8 +338,8 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       } else {
         this->connected_at_ms_ = millis();
         this->paired_this_conn_ = false;
-        ESP_LOGI(TAG, "Connected; ESP %s a saved bond for the Display (%d bonds stored)",
-                 this->esp_has_bond_() ? "has" : "has NO", esp_ble_get_bond_device_num());
+        ESP_LOGI(TAG, "Connected; ESP %s saved bond for the Display (%d bonds stored)",
+                 this->esp_has_bond_() ? "has a" : "has NO", esp_ble_get_bond_device_num());
         this->set_link_status_("Connected, securing link");
         // Proactively bond; if a bond already exists the stack just re-encrypts.
         esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
