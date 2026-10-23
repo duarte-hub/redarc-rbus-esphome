@@ -10,6 +10,17 @@ CONF_REDARC_RBUS_ID = "redarc_rbus_id"
 CONF_CHANNEL_STATUS = "channel_status"
 CONF_CHANNEL = "channel"
 CONF_CHANNEL_NAMES = "channel_names"
+CONF_ACTIVE_FAULTS = "active_faults"
+
+# History logs read from the Display's cache every `history_interval` (sensor hub option),
+# published as "newest,...,oldest": (pgn, values per frame, bytes per value, max entries, icon).
+LOGS = {
+    "soc_hourly_log": (130256, 7, 1, 28, "mdi:chart-line"),       # %, last ~24 h
+    "soc_daily_min_log": (130258, 7, 1, 35, "mdi:chart-line"),    # %, last ~30 days
+    "soc_daily_max_log": (130260, 7, 1, 35, "mdi:chart-line"),    # %, last ~30 days
+    "solar_daily_log": (130262, 3, 2, 30, "mdi:solar-power"),     # Wh per day
+    "solar_hourly_log": (130261, 3, 2, 30, "mdi:solar-power"),    # Wh per hour
+}
 
 # Enum fields, names from the RedVision app's RBus*_Enum tables:
 # (pgn, byte, bit, bits, {raw: name}, icon).
@@ -59,6 +70,12 @@ CONFIG_SCHEMA = cv.Schema(
             for key, f in FIELDS.items()
         },
         # Result of the `read_channel_names` button: "4=Name; 5=Name; ...".
+        **{
+            cv.Optional(key): text_sensor.text_sensor_schema(icon=l[4])
+            for key, l in LOGS.items()
+        },
+        # Active faults reported by any node, with the app's titles, e.g. "Low Soc (0x8110)".
+        cv.Optional(CONF_ACTIVE_FAULTS): text_sensor.text_sensor_schema(icon="mdi:alert-circle"),
         cv.Optional(CONF_CHANNEL_NAMES): text_sensor.text_sensor_schema(
             icon="mdi:tag-text-outline", entity_category="diagnostic"
         ),
@@ -77,6 +94,13 @@ async def to_code(config):
         if key in config:
             sens = await text_sensor.new_text_sensor(config[key])
             cg.add(parent.add_text_sensor(sens, pgn, byte * 8 + bit, bits, 0, 0, 0, _table(names)))
+    for key, (pgn, per_frame, nbytes, max_entries, _) in LOGS.items():
+        if key in config:
+            sens = await text_sensor.new_text_sensor(config[key])
+            cg.add(parent.add_log_text_sensor(sens, pgn, per_frame, nbytes, max_entries))
+    if CONF_ACTIVE_FAULTS in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_ACTIVE_FAULTS])
+        cg.add(parent.set_active_faults_sensor(sens))
     if CONF_CHANNEL_NAMES in config:
         sens = await text_sensor.new_text_sensor(config[CONF_CHANNEL_NAMES])
         cg.add(parent.set_labels_sensor(sens))

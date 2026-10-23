@@ -165,6 +165,10 @@ Once bonded, the keys are stored and you're set until the next full erase.
 | `passkey` | recommended | 6-digit pairing code shown on the Display |
 | `status_led` | no | GPIO pin pulsed on BLE traffic |
 | `rssi` / `rssi_update_interval` | no | BLE link RSSI sensor, poll interval (default 60s) |
+| `min_publish_interval` | no | Changed sensor values go to HA at most this often (default `5s`, `0s` = every change). Switches, selects and text stay instant |
+| `history_interval` | no | How often to read the Display's cached history logs (default `15min`, `0s` = never) |
+| `load_disconnect_node` | no | Load Disconnect Status is sent by both the charger (`0x01`) and the distribution box (`0x24`) with different set-points; entities follow this node (default `0x24`) |
+| `connection_interval` | no | Experimental: BLE connection interval to request once streaming (default `0ms` = leave as negotiated) |
 | *any key in the sensor table below* | no | Sensor schema |
 
 ## Entities
@@ -206,7 +210,8 @@ otherwise. Values like voltage change on most frames, so add a
 **`binary_sensor:`** (platform `redarc_rbus`, with `redarc_rbus_id:`):
 `ac_input_active`, `dc_input_active`, `solar_input_active`, `charger_derating`,
 `inverter_on`, `low_battery_soc_alarm`, `low_battery_voltage_alarm`,
-`load_disconnect_active`; plus lists of `channel:` entries:
+`load_disconnect_active`, `fault_active` (any device reports an active fault); plus
+lists of `channel:` entries:
 `digital_channels` (live state of any IO channel, PGN 130304) and `io_alarms`
 (analog channel over/under alarm, PGN 130311).
 
@@ -216,12 +221,43 @@ otherwise. Values like voltage change on most frames, so add a
 `load_disconnect_trigger`; plus `channel_status` (list of `channel:` entries): why an
 output is in its state (Normal, Fuse Failed, Overridden by Load Disconnect, …).
 
+- `active_faults`: active faults from any device, using the app's fault titles,
+  e.g. `Low Soc (0x8110)`, or `None`. All 71 codes the app knows are built in.
+- History logs, read from the Display every `history_interval` and published as
+  `newest,…,oldest`: `soc_hourly_log` (24 h of %), `soc_daily_min_log` /
+  `soc_daily_max_log` (~30 days of %), `solar_daily_log` (Wh per day),
+  `solar_hourly_log` (Wh per hour, not every system has it). Use a template sensor or
+  an ApexCharts `data_generator` to chart them.
+- `channel_names`: result of the `read_channel_names` button, e.g.
+  `4=Tent Light; 5=Left Light; …`.
+
 **`select:`** (platform `redarc_rbus`, with `redarc_rbus_id:`): `charging_mode`
 (Touring / Storage) and `dc_input_trigger` — settings the app changes; they follow the
 device's reported value.
 
 **`button:`** (platform `redarc_rbus`, with `redarc_rbus_id:`): `sync_soc_full` — tells
-the battery monitor the battery is full (the app's "sync SoC to 100 %").
+the battery monitor the battery is full (the app's "sync SoC to 100 %");
+`read_channel_names` — reads the output/input names stored in the system (see below).
+
+### Reading channel names
+
+Press `read_channel_names` to read the names your installer gave each channel
+(e.g. "Main Light", "Water Pump"). It replays the RedVision app's own channel-detail
+read: the gateway is switched to IO-only filters, one label request goes to the IO
+node, replies are collected for 5 s, and the standard filters are always restored.
+Telemetry pauses for ~6 s. Names appear in the log (`IO channel 7 label: "Main Light"`)
+and the `channel_names` text sensor — copy them into your switch names.
+
+> An earlier automatic version (a bare label request with the normal filters active)
+> stopped the stream on a DISP4300 and made it forget its pairing. The current
+> sequence matches captured app traffic byte for byte and has been run successfully,
+> but it only ever runs when you press the button.
+
+### History logs
+
+The Display keeps the SoC and solar logs; they are not streamed on the bus. The
+component asks for the Display's cached copy with the app's 5-byte "request to read"
+frames (`2f fc d0 fa 48`, …), which the Display answers itself without CAN traffic.
 
 ### IO channels
 
@@ -282,6 +318,8 @@ by REDARC's installer app, so they are exposed read-only.
   from the app's PGN catalogue, checked against a real capture.
 - ✅ Output control by channel with live read-back, and per-channel status/origin.
 - ✅ Analog channels (tank levels), IO alarms, daily solar Wh, SoC history.
+- ✅ Channel names read from the system; active faults with the app's descriptions;
+  hourly/daily SoC and solar history logs.
 - ✅ Charging mode, DC input trigger, SoC sync — the user app's own settings.
 - ⏳ Dimmable / RGBW outputs (not present on the developer's unit, so unverified).
 

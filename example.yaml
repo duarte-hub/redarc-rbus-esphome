@@ -139,6 +139,8 @@ binary_sensor:
       name: "Low Battery Voltage Alarm"
     load_disconnect_active:
       name: "Load Disconnect Active"
+    fault_active:
+      name: "Fault Active"
     # Live state of any IO channel (outputs and digital inputs).
     digital_channels:
       - channel: 15
@@ -167,6 +169,18 @@ text_sensor:
     channel_status:
       - channel: 7
         name: "Main Light Status"
+    channel_names:
+      name: "Channel Names"
+    active_faults:
+      name: "Active Faults"
+    soc_hourly_log:
+      name: "SoC Hourly Log"
+    soc_daily_min_log:
+      name: "SoC Daily Min Log"
+    soc_daily_max_log:
+      name: "SoC Daily Max Log"
+    solar_daily_log:
+      name: "Solar Daily Log"
 
 # Settings the RedVision app can change; state follows the device.
 select:
@@ -182,6 +196,8 @@ button:
     redarc_rbus_id: redarc_hub
     sync_soc_full:
       name: "Sync Battery SoC to 100%"
+    read_channel_names:
+      name: "Read Channel Names"
 
 # Output control by IO channel number, with real on/off read-back.
 # Find a channel's number by toggling it in the app and watching the

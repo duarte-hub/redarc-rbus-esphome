@@ -15,6 +15,7 @@ CONF_RSSI = "rssi"
 CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_MIN_PUBLISH_INTERVAL = "min_publish_interval"
+CONF_HISTORY_INTERVAL = "history_interval"
 CONF_LOAD_DISCONNECT_NODE = "load_disconnect_node"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
@@ -145,6 +146,9 @@ CONFIG_SCHEMA = (
             # a DISP4300, so it is off by default.
             # Changed sensor values go to HA at most this often (0s = every change).
             cv.Optional(CONF_MIN_PUBLISH_INTERVAL, default="5s"): cv.positive_time_period_milliseconds,
+            # How often to read the Display's cached history logs (SoC / solar). Feeds the
+            # *_log text sensors and solar_energy_* / soc_*_last_day. 0s = never.
+            cv.Optional(CONF_HISTORY_INTERVAL, default="15min"): cv.positive_time_period_milliseconds,
             # Load Disconnect Status (127240) comes from both the charger (0x01) and the
             # distribution box (0x24) with different settings; follow this node's values.
             cv.Optional(CONF_LOAD_DISCONNECT_NODE, default=0x24): cv.hex_int_range(min=0, max=0xFD),
@@ -191,4 +195,5 @@ async def to_code(config):
     cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))
     cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))
     cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
+    cg.add(var.set_history_interval(config[CONF_HISTORY_INTERVAL].total_milliseconds))
     cg.add(var.set_pgn_source(127240, config[CONF_LOAD_DISCONNECT_NODE]))

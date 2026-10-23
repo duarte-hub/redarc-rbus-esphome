@@ -49,6 +49,7 @@ static const uint32_t PGN_SOLAR_INPUT_STATUS = 127496;           // I bytes0-3, 
 static const uint32_t PGN_ACKNOWLEDGEMENT = 66560;
 static const uint32_t PGN_DIGITAL_IO_STATUS = 130304;
 static const uint32_t PGN_IO_CHANNEL_GET_LABEL = 130308;  // [channel][chunk][6 chars]
+static const uint32_t PGN_ERROR_MESSAGE = 126978;         // [code LE16][flags LE16][status]
 
 // R-Bus broadcast destination (the app's "-1" address, masked to a byte).
 static const uint8_t RBUS_BROADCAST = 0xFF;
@@ -155,6 +156,20 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_solar_power_sensor(sensor::Sensor *s) { this->solar_power_sensor_ = s; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
+  // How often to ask the Display for its cached history logs (0 = never).
+  void set_history_interval(uint32_t ms) { this->history_interval_ms_ = ms; }
+#ifdef USE_TEXT_SENSOR
+  // Multi-frame log rendered as "v1,v2,..." newest first. byte 0 of each frame is the frame
+  // number; `per_frame` values of `value_bytes` each follow.
+  void add_log_text_sensor(text_sensor::TextSensor *s, uint32_t pgn, uint8_t per_frame,
+                           uint8_t value_bytes, uint8_t max_entries) {
+    this->logs_.push_back({s, pgn, per_frame, value_bytes, std::vector<int32_t>(max_entries, -1), 0});
+  }
+  void set_active_faults_sensor(text_sensor::TextSensor *s) { this->faults_text_ = s; }
+#endif
+#ifdef USE_BINARY_SENSOR
+  void set_fault_active_sensor(binary_sensor::BinarySensor *s) { this->fault_active_ = s; }
+#endif
   // Numeric sensors publish a changed value at most this often (switches/text stay instant).
   void set_min_publish_interval(uint32_t ms) { this->min_publish_ms_ = ms; }
   // Only accept `pgn` from node `addr`. Some PGNs are sent by several nodes with different
@@ -214,6 +229,38 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   std::map<uint32_t, uint8_t> source_addr_;  // PGN -> node address that sends it
   std::map<uint32_t, uint8_t> pgn_source_;   // PGN -> only node accepted for entities
   uint32_t min_publish_ms_{5000};
+
+  // History logs: cached reads served by the Display ("request to read", see request_history_()).
+  void request_history_();
+  uint32_t history_interval_ms_{15 * 60 * 1000};
+  uint32_t history_next_ms_{0};
+  size_t history_idx_{0};
+  uint32_t history_last_tx_ms_{0};
+  bool history_sending_{false};
+#ifdef USE_TEXT_SENSOR
+  struct LogBinding {
+    text_sensor::TextSensor *sensor;
+    uint32_t pgn;
+    uint8_t per_frame;
+    uint8_t value_bytes;
+    std::vector<int32_t> values;  // -1 = not available
+    uint32_t dirty_ms;
+  };
+  std::vector<LogBinding> logs_;
+  void handle_log_(uint32_t pgn, const uint8_t *pay, uint32_t now);
+  void publish_logs_(uint32_t now);
+#endif
+
+  // Faults: active (node, code) -> flags, from Error Message frames.
+  void handle_fault_(uint8_t src, const uint8_t *pay);
+  void publish_faults_();
+  std::map<uint32_t, uint16_t> active_faults_;
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *faults_text_{nullptr};
+#endif
+#ifdef USE_BINARY_SENSOR
+  binary_sensor::BinarySensor *fault_active_{nullptr};
+#endif
 
   // IO channel label read (button-triggered).
   enum class LabelPhase { IDLE, FILTERING, COLLECTING, RESTORING };

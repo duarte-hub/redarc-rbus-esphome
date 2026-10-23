@@ -10,6 +10,7 @@ CONF_REDARC_RBUS_ID = "redarc_rbus_id"
 CONF_DIGITAL_CHANNELS = "digital_channels"
 CONF_IO_ALARMS = "io_alarms"
 CONF_CHANNEL = "channel"
+CONF_FAULT_ACTIVE = "fault_active"
 
 # 2-bit J1939 booleans (0 = off, 1 = on, 2 = error, 3 = n/a), from the RedVision app's PGN
 # catalogue: (pgn, byte, bit, device_class, icon).
@@ -38,6 +39,8 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Optional(key): binary_sensor.binary_sensor_schema(device_class=dc, icon=icon)
             for key, (_, _, _, dc, icon) in FIELDS.items()
         },
+        # On while any node reports an active fault (details: `active_faults` text sensor).
+        cv.Optional(CONF_FAULT_ACTIVE): binary_sensor.binary_sensor_schema(device_class="problem"),
         cv.Optional(CONF_DIGITAL_CHANNELS): cv.ensure_list(
             binary_sensor.binary_sensor_schema(icon="mdi:electric-switch").extend(_CHANNEL_SCHEMA)
         ),
@@ -54,6 +57,9 @@ async def to_code(config):
         if key in config:
             sens = await binary_sensor.new_binary_sensor(config[key])
             cg.add(parent.add_binary_sensor(sens, pgn, byte * 8 + bit, 2, 0, 0, 0))
+    if CONF_FAULT_ACTIVE in config:
+        sens = await binary_sensor.new_binary_sensor(config[CONF_FAULT_ACTIVE])
+        cg.add(parent.set_fault_active_sensor(sens))
     for key, (pgn, per_frame, slot_bytes) in (
         (CONF_DIGITAL_CHANNELS, DIGITAL_IO_STATUS),
         (CONF_IO_ALARMS, IO_ALARM_STATUS),

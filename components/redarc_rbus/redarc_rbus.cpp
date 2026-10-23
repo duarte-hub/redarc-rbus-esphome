@@ -1,4 +1,5 @@
 #include "redarc_rbus.h"
+#include "fault_codes.h"
 
 #ifdef USE_ESP32
 
@@ -110,6 +111,10 @@ void RedarcRbus::loop() {
 
   const uint32_t now = millis();
   this->label_read_step_(now);
+  this->request_history_();
+#ifdef USE_TEXT_SENSOR
+  this->publish_logs_(now);
+#endif
 
   if (!this->sending_filters_)
     return;
@@ -123,6 +128,8 @@ void RedarcRbus::loop() {
       this->publish_labels_();
     } else {
       this->request_conn_interval_();
+      this->history_next_ms_ = now + 2000;  // first history read shortly after streaming starts
+      this->publish_faults_();              // nodes only report faults when they happen
     }
     return;
   }
@@ -218,6 +225,9 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->source_addr_.clear();
       this->labels_.clear();
       this->label_phase_ = LabelPhase::IDLE;  // reconnect re-sends the standard filters
+      this->history_next_ms_ = 0;
+      this->history_sending_ = false;
+      this->active_faults_.clear();
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -425,6 +435,141 @@ void RedarcRbus::label_read_step_(uint32_t now) {
   }
 }
 
+// History logs (SoC hourly/daily min/max, solar daily/hourly) are not streamed; the app asks the
+// Display for its cached copy with a 5-byte "request to read" frame [2f][PF][PS][fa][48] (DLC
+// byte 0x48 = read request, no payload), which the Display answers itself without CAN traffic.
+// These are the exact frames the app sends (captured), at the app's ~100 ms spacing.
+static const uint8_t HISTORY_REQUESTS[][2] = {
+    {0xfc, 0xd0},  // 130256 SoC log, hourly
+    {0xfc, 0xd2},  // 130258 minimum SoC log, daily
+    {0xfc, 0xd4},  // 130260 maximum SoC log, daily
+    {0xfc, 0xd6},  // 130262 cumulative solar log, daily
+    {0xfc, 0xd5},  // 130261 cumulative solar log, hourly
+};
+static const size_t HISTORY_REQUEST_COUNT = sizeof(HISTORY_REQUESTS) / sizeof(HISTORY_REQUESTS[0]);
+
+void RedarcRbus::request_history_() {
+  const uint32_t now = millis();
+  if (this->history_interval_ms_ == 0 || !this->ready() || this->sending_filters_ ||
+      this->label_phase_ != LabelPhase::IDLE)
+    return;
+  if (!this->history_sending_) {
+    if (this->history_next_ms_ == 0 || (int32_t) (now - this->history_next_ms_) < 0)
+      return;
+    this->history_sending_ = true;
+    this->history_idx_ = 0;
+  }
+  if (now - this->history_last_tx_ms_ < 100)
+    return;
+  if (this->history_idx_ >= HISTORY_REQUEST_COUNT) {
+    this->history_sending_ = false;
+    this->history_next_ms_ = now + this->history_interval_ms_;
+    return;
+  }
+  const uint8_t *r = HISTORY_REQUESTS[this->history_idx_++];
+  this->send_command({0x2f, r[0], r[1], 0xfa, 0x48});
+  this->history_last_tx_ms_ = now;
+}
+
+#ifdef USE_TEXT_SENSOR
+void RedarcRbus::handle_log_(uint32_t pgn, const uint8_t *pay, uint32_t now) {
+  for (auto &b : this->logs_) {
+    if (b.pgn != pgn)
+      continue;
+    for (uint8_t k = 0; k < b.per_frame; k++) {
+      const size_t idx = (size_t) pay[0] * b.per_frame + k;
+      const size_t off = 1 + k * b.value_bytes;
+      if (idx >= b.values.size() || off + b.value_bytes > 8)
+        continue;
+      int32_t raw = pay[off];
+      if (b.value_bytes == 2)
+        raw |= pay[off + 1] << 8;
+      const int32_t na = b.value_bytes == 2 ? 0xFFFB : 0xFB;
+      const int32_t v = raw >= na ? -1 : raw;
+      if (b.values[idx] != v) {
+        b.values[idx] = v;
+        b.dirty_ms = now;
+      }
+    }
+  }
+}
+
+// Publish a log once its frames have stopped arriving, as "newest,...,oldest".
+void RedarcRbus::publish_logs_(uint32_t now) {
+  for (auto &b : this->logs_) {
+    if (b.dirty_ms == 0 || now - b.dirty_ms < 1000)
+      continue;
+    b.dirty_ms = 0;
+    std::string s;
+    for (int32_t v : b.values) {
+      if (v < 0)
+        break;
+      if (!s.empty())
+        s += ',';
+      s += std::to_string(v);
+    }
+    if (!s.empty())
+      b.sensor->publish_state(s);
+  }
+}
+#endif
+
+static const FaultCode *find_fault(uint16_t code) {
+  for (const auto &f : FAULT_CODES)
+    if (f.code == code)
+      return &f;
+  return nullptr;
+}
+
+// Error Message: [code LE16][flags LE16: 1 notify, 2 visual, 4 audible, 8 stop charging,
+// 0x10 user clearable, 0x20 unignorable][status bits 0-1: 1 active, 0 cleared].
+void RedarcRbus::handle_fault_(uint8_t src, const uint8_t *pay) {
+  const uint16_t code = pay[0] | (pay[1] << 8);
+  const uint16_t flags = pay[2] | (pay[3] << 8);
+  const uint8_t status = pay[4] & 0x03;
+  if (code >= 0xFFFB || status > 1)
+    return;
+  const FaultCode *f = find_fault(code);
+  ESP_LOGW(TAG, "Fault %s from node 0x%02x: 0x%04X %s (flags 0x%04X)", status ? "ACTIVE" : "cleared",
+           src, code, f != nullptr ? f->title : "unknown", flags);
+  const uint32_t key = ((uint32_t) src << 16) | code;
+  const size_t before = this->active_faults_.size();
+  if (status == 1) {
+    auto it = this->active_faults_.find(key);
+    if (it != this->active_faults_.end() && it->second == flags)
+      return;  // repeat of a known active fault
+    if (this->active_faults_.size() >= 16 && it == this->active_faults_.end())
+      return;  // bound the set
+    this->active_faults_[key] = flags;
+  } else if (this->active_faults_.erase(key) == 0 && before != 0) {
+    return;
+  }
+  this->publish_faults_();
+}
+
+void RedarcRbus::publish_faults_() {
+#ifdef USE_BINARY_SENSOR
+  if (this->fault_active_ != nullptr)
+    this->fault_active_->publish_state(!this->active_faults_.empty());
+#endif
+#ifdef USE_TEXT_SENSOR
+  if (this->faults_text_ == nullptr)
+    return;
+  std::string s;
+  for (auto &kv : this->active_faults_) {
+    const uint16_t code = kv.first & 0xFFFF;
+    const FaultCode *f = find_fault(code);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s%s (0x%04X)", s.empty() ? "" : "; ",
+             f != nullptr ? f->title : "Unknown fault", code);
+    if (s.size() + strlen(buf) > 250)
+      break;
+    s += buf;
+  }
+  this->faults_text_->publish_state(s.empty() ? "None" : s);
+#endif
+}
+
 // [channel][chunk index][6 characters]; chunks concatenate into the channel's label.
 void RedarcRbus::handle_label_(const uint8_t src, const uint8_t *pay) {
   // Bound what we store: only replies during our read, from the node we asked, real channel
@@ -448,7 +593,7 @@ void RedarcRbus::publish_labels_() {
     for (auto &chunk : ch.second)
       label += chunk.second;
     ESP_LOGI(TAG, "IO channel %u label: \"%s\"", ch.first, label.c_str());
-    if (all.size() < 220)
+    if (all.size() < 240)
       all += (all.empty() ? "" : "; ") + std::to_string(ch.first) + "=" + label;
   }
   ESP_LOGI(TAG, "Channel label read finished: %u channels", (unsigned) this->labels_.size());
@@ -648,6 +793,11 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
 
   if (pgn == PGN_IO_CHANNEL_GET_LABEL)
     this->handle_label_(hdr[3], pay);
+  if (pgn == PGN_ERROR_MESSAGE)
+    this->handle_fault_(hdr[3], pay);
+#ifdef USE_TEXT_SENSOR
+  this->handle_log_(pgn, pay, now);
+#endif
   if (pgn == PGN_ACKNOWLEDGEMENT)  // reply to our parameter sets: type, SPN, index, status
     ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
              pay[1] | (pay[2] << 8), pay[3], pay[4]);
