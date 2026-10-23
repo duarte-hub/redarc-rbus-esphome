@@ -16,6 +16,7 @@ CONF_RSSI_UPDATE_INTERVAL = "rssi_update_interval"
 CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_MIN_PUBLISH_INTERVAL = "min_publish_interval"
 CONF_HISTORY_INTERVAL = "history_interval"
+CONF_KEEP_AWAKE = "keep_awake"
 CONF_LOAD_DISCONNECT_NODE = "load_disconnect_node"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
@@ -149,6 +150,9 @@ CONFIG_SCHEMA = (
             # How often to read the Display's cached history logs (SoC / solar). Feeds the
             # *_log text sensors and solar_energy_* / soc_*_last_day. 0s = never.
             cv.Optional(CONF_HISTORY_INTERVAL, default="15min"): cv.positive_time_period_milliseconds,
+            # Re-wake the TVMS when telemetry stops (it sleeps and stops streaming while the
+            # BLE link stays up). Keeps it awake, so it uses a little more battery. false = allow sleep.
+            cv.Optional(CONF_KEEP_AWAKE, default=True): cv.boolean,
             # Load Disconnect Status (127240) comes from both the charger (0x01) and the
             # distribution box (0x24) with different settings; follow this node's values.
             cv.Optional(CONF_LOAD_DISCONNECT_NODE, default=0x24): cv.hex_int_range(min=0, max=0xFD),
@@ -196,4 +200,5 @@ async def to_code(config):
     cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))
     cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
     cg.add(var.set_history_interval(config[CONF_HISTORY_INTERVAL].total_milliseconds))
+    cg.add(var.set_keep_awake(config[CONF_KEEP_AWAKE]))
     cg.add(var.set_pgn_source(127240, config[CONF_LOAD_DISCONNECT_NODE]))

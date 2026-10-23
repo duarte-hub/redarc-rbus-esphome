@@ -14,9 +14,15 @@ namespace redarc_rbus {
 
 static const char *const TAG = "redarc_rbus";
 
-// Initial write the app sends to char 8001 before the filter burst.
+// Initial write the app sends to char 8001 before the filter burst: "Keep Awake" (PGN 0xE6xx,
+// broadcast). The app only sends it when it connects; the keep-awake watchdog re-sends it.
 static const uint8_t INIT_8001[] = {0x2f, 0xe6, 0xff, 0xfa, 0x08, 0xff, 0xff,
                                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+// The TVMS goes to sleep after a while and stops streaming while the BLE link stays up. If no
+// frame arrives for this long, send Keep Awake; after KEEP_AWAKE_MAX_TRIES silent periods,
+// drop the link so the full connect sequence (Keep Awake + filters) runs again.
+static const uint32_t KEEP_AWAKE_SILENCE_MS = 30000;
+static const uint8_t KEEP_AWAKE_MAX_TRIES = 3;
 
 // The 32 filter-enrollment frames the RedVision app writes to char 8002, in order.
 // Each is [index][0x2a][...]; they tell the R-Bus gateway which PGNs to forward.
@@ -112,6 +118,7 @@ void RedarcRbus::loop() {
   const uint32_t now = millis();
   this->label_read_step_(now);
   this->request_history_();
+  this->keep_awake_check_(now);
 #ifdef USE_TEXT_SENSOR
   this->publish_logs_(now);
 #endif
@@ -228,6 +235,8 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->history_next_ms_ = 0;
       this->history_sending_ = false;
       this->active_faults_.clear();
+      this->last_frame_ms_ = 0;
+      this->wake_tries_ = 0;
       if (this->status_led_ != nullptr) {
         this->status_led_->digital_write(false);
         this->led_off_at_ = 0;
@@ -272,11 +281,17 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->filter_idx_ = 0;
       this->last_write_ms_ = millis();
       this->sending_filters_ = true;
+      this->last_frame_ms_ = millis();  // start the silence clock from subscription
+      this->wake_tries_ = 0;
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
       if (param->notify.handle == this->notify_handle_) {
         this->blink_activity_();
+        if (this->wake_tries_ != 0)
+          ESP_LOGI(TAG, "Telemetry resumed");
+        this->last_frame_ms_ = millis();
+        this->wake_tries_ = 0;
         this->handle_frame_(param->notify.value, param->notify.value_len);
       }
       break;
@@ -616,6 +631,28 @@ void RedarcRbus::request_conn_interval_() {
   ESP_LOGD(TAG, "Requesting BLE connection interval %u-%u ms", (unsigned) this->conn_interval_ms_,
            (unsigned) (this->conn_interval_ms_ + 25));
   esp_ble_gap_update_conn_params(&p);
+}
+
+void RedarcRbus::keep_awake_check_(uint32_t now) {
+  if (!this->keep_awake_ || !this->ready() || this->sending_filters_ ||
+      this->label_phase_ != LabelPhase::IDLE || this->last_frame_ms_ == 0)
+    return;
+  const uint32_t since = this->wake_tries_ == 0 ? this->last_frame_ms_ : this->last_wake_ms_;
+  if (now - since < KEEP_AWAKE_SILENCE_MS)
+    return;
+  if (this->wake_tries_ >= KEEP_AWAKE_MAX_TRIES) {
+    ESP_LOGW(TAG, "No telemetry for %us after %u wake attempts; reconnecting to the Display",
+             (unsigned) ((now - this->last_frame_ms_) / 1000), this->wake_tries_);
+    this->wake_tries_ = 0;
+    this->last_frame_ms_ = 0;  // re-armed when the new subscription starts
+    esp_ble_gap_disconnect(this->parent()->get_remote_bda());
+    return;
+  }
+  this->wake_tries_++;
+  this->last_wake_ms_ = now;
+  ESP_LOGW(TAG, "No telemetry for %us (system asleep?); sending Keep Awake (%u/%u)",
+           (unsigned) ((now - this->last_frame_ms_) / 1000), this->wake_tries_, KEEP_AWAKE_MAX_TRIES);
+  this->send_command(std::vector<uint8_t>(INIT_8001, INIT_8001 + sizeof(INIT_8001)));
 }
 
 uint8_t RedarcRbus::source_of(uint32_t pgn, uint8_t fallback) const {

@@ -156,6 +156,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_solar_power_sensor(sensor::Sensor *s) { this->solar_power_sensor_ = s; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
+  // Wake the TVMS (Keep Awake, then reconnect) when telemetry stops. Off = let it sleep.
+  void set_keep_awake(bool on) { this->keep_awake_ = on; }
   // How often to ask the Display for its cached history logs (0 = never).
   void set_history_interval(uint32_t ms) { this->history_interval_ms_ = ms; }
 #ifdef USE_TEXT_SENSOR
@@ -229,6 +231,13 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   std::map<uint32_t, uint8_t> source_addr_;  // PGN -> node address that sends it
   std::map<uint32_t, uint8_t> pgn_source_;   // PGN -> only node accepted for entities
   uint32_t min_publish_ms_{5000};
+
+  // Keep-awake watchdog: re-wake the system when the stream goes quiet.
+  void keep_awake_check_(uint32_t now);
+  bool keep_awake_{true};
+  uint32_t last_frame_ms_{0};
+  uint32_t last_wake_ms_{0};
+  uint8_t wake_tries_{0};
 
   // History logs: cached reads served by the Display ("request to read", see request_history_()).
   void request_history_();
