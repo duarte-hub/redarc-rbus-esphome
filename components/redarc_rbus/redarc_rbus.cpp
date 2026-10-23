@@ -139,6 +139,7 @@ void RedarcRbus::loop() {
       this->set_link_status_("Streaming");
     } else {
       this->set_link_status_("Streaming");
+      this->set_coex_prefer_bt_(false);
       this->request_conn_interval_();
       this->history_next_ms_ = now + 2000;  // first history read shortly after streaming starts
       this->publish_faults_();              // nodes only report faults when they happen
@@ -367,6 +368,7 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
           this->disconnects_sensor_->publish_state(this->disconnects_);
         this->set_pairing_required_(false);
         this->set_link_status_("Disconnected, searching");
+        this->set_coex_prefer_bt_(true);  // reconnect + discovery need the radio
       }
       this->have_handles_ = false;
       this->bonded_ = false;
@@ -950,6 +952,69 @@ void RedarcRbus::publish_power_(sensor::Sensor *s, PublishGate &gate, uint64_t p
     s->publish_state(w);
 }
 
+// Coexistence: ESPHome sets "prefer Bluetooth" to connect and only reverts once no BLE
+// connection is open, i.e. never for this always-on link. Once our handshake and filter
+// enrollment are done we only receive notifications, so balanced is enough for BLE and gives
+// Wi-Fi (the HA API) its airtime back.
+void RedarcRbus::set_coex_prefer_bt_(bool prefer_bt) {
+#ifdef USE_ESP32_BLE_SOFTWARE_COEXISTENCE
+  if (!this->balance_coex_)
+    return;
+  esp_coex_preference_set(prefer_bt ? ESP_COEX_PREFER_BT : ESP_COEX_PREFER_BALANCE);
+  ESP_LOGI(TAG, "Radio coexistence: %s", prefer_bt ? "prefer Bluetooth" : "balanced (streaming)");
+#endif
+}
+
+// Same rules as the app's ModelUtils._formatTimeRemaining: positive = to full (hours rounded
+// up), negative = to flat (rounded down); "Full" when charging at 100 % SoC; "< 1 hr";
+// hours up to 23, then days; over 28 days = "More than 28 days". The battery monitor caps the
+// value at about +-50000 min (35 days) when the current is near zero, so the numeric sensor
+// goes unknown for "Full" and over-28-day values instead of swinging between the caps.
+void RedarcRbus::publish_time_remaining_(uint64_t payload, uint32_t now) {
+  static const FieldSpec SOC{PGN_BATTERY_CHARGE_STATUS, 0, 8, 0, 1.0f};
+  static const FieldSpec TIME{PGN_BATTERY_CHARGE_STATUS, 16, 16, -32127, 5.0f};
+  float soc, minutes;
+  if (!field_value_(TIME, payload, minutes))
+    return;
+  const bool have_soc = field_value_(SOC, payload, soc);
+  const bool charging = minutes > 0;
+  const bool full = charging && have_soc && soc >= 100;
+  const float hours = std::fabs(minutes) / 60.0f;
+  const float h = charging ? std::ceil(hours) : std::floor(hours);
+  const float d = charging ? std::ceil(hours / 24.0f) : std::floor(hours / 24.0f);
+  const bool beyond = h > 23 && d > 28;
+
+  if (this->time_remaining_sensor_ != nullptr) {
+    if (full || beyond) {
+      if (!std::isnan(this->time_remaining_gate_.last) || !this->time_remaining_sensor_->has_state()) {
+        this->time_remaining_gate_.last = NAN;
+        this->time_remaining_gate_.last_ms = now;
+        this->time_remaining_sensor_->publish_state(NAN);
+      }
+    } else if (this->time_remaining_gate_.due(minutes, now, this->min_publish_ms_)) {
+      this->time_remaining_sensor_->publish_state(minutes);
+    }
+  }
+#ifdef USE_TEXT_SENSOR
+  if (this->time_remaining_text_ == nullptr)
+    return;
+  const char *dir = charging ? "to full" : "to flat";
+  char buf[40];
+  if (full)
+    snprintf(buf, sizeof(buf), "Full");
+  else if (h < 1)
+    snprintf(buf, sizeof(buf), "Less than 1 hr %s", dir);
+  else if (h <= 23)
+    snprintf(buf, sizeof(buf), "%.0f hr%s %s", h, h == 1 ? "" : "s", dir);
+  else if (d > 28)
+    snprintf(buf, sizeof(buf), "More than 28 days %s", dir);
+  else
+    snprintf(buf, sizeof(buf), "%.0f day%s %s", d, d == 1 ? "" : "s", dir);
+  if (this->time_remaining_text_->state != buf)
+    this->time_remaining_text_->publish_state(buf);
+#endif
+}
+
 // R-Bus telemetry frame = [4-byte J1939 29-bit CAN id][DLC=0x08][8-byte payload].
 // The app's CANBytesParser reads fields as (value >> ((startByte-1)*8 + startBit-1)) & mask over
 // the payload; that is plain little-endian extraction, so each field is a shift into a LE u64.
@@ -1027,6 +1092,8 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
   }
 #endif
 
+  if (pgn == PGN_BATTERY_CHARGE_STATUS)
+    this->publish_time_remaining_(payload, now);
   if (pgn == PGN_BATTERY_SENSOR_MEASUREMENTS)
     this->publish_power_(this->battery_power_sensor_, this->battery_power_gate_, payload, now);
   else if (pgn == PGN_SOLAR_INPUT_STATUS)

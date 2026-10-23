@@ -17,6 +17,8 @@ CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_MIN_PUBLISH_INTERVAL = "min_publish_interval"
 CONF_HISTORY_INTERVAL = "history_interval"
 CONF_KEEP_AWAKE = "keep_awake"
+CONF_BALANCE_COEXISTENCE = "balance_coexistence"
+CONF_TIME_REMAINING = "time_remaining"
 CONF_LOAD_DISCONNECT_NODE = "load_disconnect_node"
 CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
@@ -44,9 +46,6 @@ FIELDS = {
     # Battery Charge Status (127236)
     "state_of_charge": _f(127236, 0, unit="%", dc="battery"),
     "state_of_health": _f(127236, 1, unit="%", icon="mdi:battery-heart-variant"),
-    # Signed: positive = minutes until full, negative = minutes until flat.
-    "time_remaining": _f(127236, 2, bits=16, offset=-32127, scale=5, unit="min",
-                         icon="mdi:timer-sand"),
     # Battery Sensor Measurements (127234)
     "voltage": _f(127234, 4, **_MV, unit="V", dc="voltage", dec=3),
     "current": _f(127234, 0, **_I32, unit="A", dc="current", dec=2),
@@ -127,6 +126,14 @@ CONFIG_SCHEMA = (
                     {cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=250)}
                 )
             ),
+            # Minutes to full (+) / flat (-). Unknown when full or beyond 28 days, like the app
+            # (the battery monitor caps it at ~35 days when the current is near zero).
+            cv.Optional(CONF_TIME_REMAINING): sensor.sensor_schema(
+                unit_of_measurement="min",
+                accuracy_decimals=0,
+                icon="mdi:timer-sand",
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
             cv.Optional(CONF_SOLAR_POWER): sensor.sensor_schema(
                 unit_of_measurement="W",
                 accuracy_decimals=1,
@@ -164,6 +171,9 @@ CONFIG_SCHEMA = (
             # Re-wake the TVMS when telemetry stops (it sleeps and stops streaming while the
             # BLE link stays up). Keeps it awake, so it uses a little more battery. false = allow sleep.
             cv.Optional(CONF_KEEP_AWAKE, default=True): cv.boolean,
+            # Switch the radio from "prefer Bluetooth" back to balanced once streaming, so Wi-Fi
+            # (the HA API) is not starved by the always-open BLE link.
+            cv.Optional(CONF_BALANCE_COEXISTENCE, default=True): cv.boolean,
             # Load Disconnect Status (127240) comes from both the charger (0x01) and the
             # distribution box (0x24) with different settings; follow this node's values.
             cv.Optional(CONF_LOAD_DISCONNECT_NODE, default=0x24): cv.hex_int_range(min=0, max=0xFD),
@@ -201,6 +211,9 @@ async def to_code(config):
     if CONF_BATTERY_POWER in config:
         sens = await sensor.new_sensor(config[CONF_BATTERY_POWER])
         cg.add(var.set_battery_power_sensor(sens))
+    if CONF_TIME_REMAINING in config:
+        sens = await sensor.new_sensor(config[CONF_TIME_REMAINING])
+        cg.add(var.set_time_remaining_sensor(sens))
     if CONF_SOLAR_POWER in config:
         sens = await sensor.new_sensor(config[CONF_SOLAR_POWER])
         cg.add(var.set_solar_power_sensor(sens))
@@ -218,4 +231,5 @@ async def to_code(config):
     cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
     cg.add(var.set_history_interval(config[CONF_HISTORY_INTERVAL].total_milliseconds))
     cg.add(var.set_keep_awake(config[CONF_KEEP_AWAKE]))
+    cg.add(var.set_balance_coexistence(config[CONF_BALANCE_COEXISTENCE]))
     cg.add(var.set_pgn_source(127240, config[CONF_LOAD_DISCONNECT_NODE]))

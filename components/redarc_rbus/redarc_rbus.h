@@ -23,6 +23,9 @@
 
 #include <esp_gap_ble_api.h>
 #include <esp_gattc_api.h>
+#ifdef USE_ESP32_BLE_SOFTWARE_COEXISTENCE
+#include <esp_coexist.h>
+#endif
 
 #include <cmath>
 #include <map>
@@ -45,6 +48,7 @@ static const char *const REDARC_CHAR_8002_UUID = "09022015-5160-4000-8002-524544
 // R-Bus PGNs used for derived values (REDARC's own J1939 numbering, from the reversed app).
 // Every other field is described by a FieldSpec supplied from the Python field tables.
 static const uint32_t PGN_BATTERY_SENSOR_MEASUREMENTS = 127234;  // I bytes0-3, V bytes4-5, T byte6
+static const uint32_t PGN_BATTERY_CHARGE_STATUS = 127236;        // SoC byte0, time to full/flat bytes2-3
 static const uint32_t PGN_SOLAR_INPUT_STATUS = 127496;           // I bytes0-3, V bytes4-5
 static const uint32_t PGN_ACKNOWLEDGEMENT = 66560;
 static const uint32_t PGN_DIGITAL_IO_STATUS = 130304;
@@ -154,6 +158,14 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // Derived: battery power = battery V x I (127234); solar power = solar V x I (127496).
   void set_battery_power_sensor(sensor::Sensor *s) { this->battery_power_sensor_ = s; }
   void set_solar_power_sensor(sensor::Sensor *s) { this->solar_power_sensor_ = s; }
+  // Battery time to full (+) / flat (-) in minutes (127236), shown the way the app shows it.
+  void set_time_remaining_sensor(sensor::Sensor *s) { this->time_remaining_sensor_ = s; }
+#ifdef USE_TEXT_SENSOR
+  void set_time_remaining_text_sensor(text_sensor::TextSensor *s) { this->time_remaining_text_ = s; }
+#endif
+  // Hand the shared radio back to Wi-Fi (balanced coexistence) once streaming. ESPHome keeps
+  // "prefer Bluetooth" for as long as a BLE connection is open, which starves the API.
+  void set_balance_coexistence(bool on) { this->balance_coex_ = on; }
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
   // Wake the TVMS (Keep Awake, then reconnect) when telemetry stops. Off = let it sleep.
@@ -212,6 +224,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   static bool field_raw_(const FieldSpec &f, uint64_t payload, uint32_t &raw);
   static bool field_value_(const FieldSpec &f, uint64_t payload, float &value);
   void publish_power_(sensor::Sensor *s, PublishGate &gate, uint64_t payload, uint32_t now);
+  void publish_time_remaining_(uint64_t payload, uint32_t now);
+  void set_coex_prefer_bt_(bool prefer_bt);
 
   struct SensorBinding {
     sensor::Sensor *sensor;
@@ -300,6 +314,12 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
 
   sensor::Sensor *battery_power_sensor_{nullptr};
   sensor::Sensor *solar_power_sensor_{nullptr};
+  sensor::Sensor *time_remaining_sensor_{nullptr};
+  PublishGate time_remaining_gate_;
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *time_remaining_text_{nullptr};
+#endif
+  bool balance_coex_{true};
   PublishGate battery_power_gate_;
   PublishGate solar_power_gate_;
 

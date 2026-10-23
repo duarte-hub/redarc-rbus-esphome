@@ -180,6 +180,8 @@ text_sensor:
       name: "Channel Names"
     active_faults:
       name: "Active Faults"
+    time_remaining_text:
+      name: "Battery Time Remaining (Text)"
     link_status:
       name: "BLE Link Status"
     last_disconnect:

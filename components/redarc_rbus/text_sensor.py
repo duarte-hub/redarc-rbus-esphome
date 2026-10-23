@@ -19,6 +19,9 @@ DIAGNOSTICS = {
     "last_pairing": ("set_last_pairing_sensor", "mdi:key-wireless"),
 }
 
+# Battery time to full/flat worded like the app: "Full", "3 hrs to full", "2 days to flat".
+CONF_TIME_REMAINING_TEXT = "time_remaining_text"
+
 # History logs read from the Display's cache every `history_interval` (sensor hub option),
 # published as "newest,...,oldest": (pgn, values per frame, bytes per value, max entries, icon).
 LOGS = {
@@ -83,6 +86,7 @@ CONFIG_SCHEMA = cv.Schema(
         },
         # Active faults reported by any node, with the app's titles, e.g. "Low Soc (0x8110)".
         cv.Optional(CONF_ACTIVE_FAULTS): text_sensor.text_sensor_schema(icon="mdi:alert-circle"),
+        cv.Optional(CONF_TIME_REMAINING_TEXT): text_sensor.text_sensor_schema(icon="mdi:timer-sand"),
         cv.Optional(CONF_CHANNEL_NAMES): text_sensor.text_sensor_schema(
             icon="mdi:tag-text-outline", entity_category="diagnostic"
         ),
@@ -115,6 +119,9 @@ async def to_code(config):
     if CONF_CHANNEL_NAMES in config:
         sens = await text_sensor.new_text_sensor(config[CONF_CHANNEL_NAMES])
         cg.add(parent.set_labels_sensor(sens))
+    if CONF_TIME_REMAINING_TEXT in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_TIME_REMAINING_TEXT])
+        cg.add(parent.set_time_remaining_text_sensor(sens))
     for key, (setter, _) in DIAGNOSTICS.items():
         if key in config:
             sens = await text_sensor.new_text_sensor(config[key])

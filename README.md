@@ -167,6 +167,7 @@ Once bonded, the keys are stored and you're set until the next full erase.
 | `rssi` / `rssi_update_interval` | no | BLE link RSSI sensor, poll interval (default 60s) |
 | `min_publish_interval` | no | Changed sensor values go to HA at most this often (default `5s`, `0s` = every change). Switches, selects and text stay instant |
 | `keep_awake` | no | Send the app's Keep Awake frame every 60 s while connected (default `true`). In Storage mode the TVMS sleeps by design and stops streaming; the ESP stays connected (reconnecting to a sleeping system made the Display demand a new passkey) and streaming resumes when it wakes. `false` = never send Keep Awake |
+| `balance_coexistence` | no | Switch the ESP32's shared radio from "prefer Bluetooth" back to balanced once streaming (default `true`). ESPHome keeps "prefer Bluetooth" while any BLE connection is open, which for this always-on link starved Wi-Fi and dropped the HA API every few minutes. It goes back to "prefer Bluetooth" while reconnecting |
 | `history_interval` | no | How often to read the Display's cached history logs (default `15min`, `0s` = never) |
 | `load_disconnect_node` | no | Load Disconnect Status is sent by both the charger (`0x01`) and the distribution box (`0x24`) with different set-points; entities follow this node (default `0x24`) |
 | `connection_interval` | no | Experimental: BLE connection interval to request once streaming (default `0ms` = leave as negotiated) |
@@ -269,6 +270,15 @@ other channels may be millivolts — compare with the Display and add a
 `unit_of_measurement` / `filters` to suit.
 
 See [`example.yaml`](example.yaml) for every entity configured.
+
+## Battery time remaining
+
+`time_remaining` (sensor, minutes, + = to full, − = to flat) and `time_remaining_text`
+(text_sensor) follow the RedVision app: "Full" when charging at 100 %, "Less than 1 hr",
+"N hrs", "N days", "More than 28 days". Near zero current the battery monitor reports its
+cap (about ±50000 min), and at full charge the sign flips with each Float / Battery Test
+cycle, so the numeric sensor is unknown when full or over 28 days instead of swinging
+between those values.
 
 ## Link diagnostics
 
