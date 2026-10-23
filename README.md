@@ -270,6 +270,21 @@ other channels may be millivolts — compare with the Display and add a
 
 See [`example.yaml`](example.yaml) for every entity configured.
 
+## Link diagnostics
+
+Optional entities to explain dropouts and lost bonds. They are published the moment
+something happens, so HA's history becomes a timeline:
+
+| Platform | Key | Shows |
+|---|---|---|
+| text_sensor | `link_status` | Searching / Connected, securing link / Pairing required / Bonded, starting stream / Streaming / Connected, system asleep / Disconnected |
+| text_sensor | `last_disconnect` | Reason (e.g. supervision timeout, Display closed the link, key missing), how long the link had been up, the state it was in, time since the last frame |
+| text_sensor | `last_pairing` | When the Display asked for a code and whether the ESP still had the bond (if yes, the Display forgot it), or why pairing failed |
+| binary_sensor | `pairing_required` | On while the Display waits for its 6-digit code: use it to send a phone notification |
+| sensor | `disconnects`, `pairing_requests` | Counts since the ESP booted |
+
+Add ESPHome's `debug` (`reset_reason`) and `uptime` sensors too, to see why and when the ESP restarted.
+
 ## Output control (switches)
 
 Outputs are switched exactly the way the app's control screen does it: an

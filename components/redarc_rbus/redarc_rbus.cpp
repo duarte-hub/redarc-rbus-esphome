@@ -70,6 +70,7 @@ static const uint32_t PUBLISH_HEARTBEAT_MS = 60000;
 
 void RedarcRbus::setup() {
   this->configure_security_();
+  this->set_link_status_("Searching");
   if (this->status_led_ != nullptr) {
     this->status_led_->setup();
     this->status_led_->digital_write(false);
@@ -134,7 +135,9 @@ void RedarcRbus::loop() {
     if (this->label_phase_ == LabelPhase::RESTORING) {
       this->label_phase_ = LabelPhase::IDLE;
       this->publish_labels_();
+      this->set_link_status_("Streaming");
     } else {
+      this->set_link_status_("Streaming");
       this->request_conn_interval_();
       this->history_next_ms_ = now + 2000;  // first history read shortly after streaming starts
       this->publish_faults_();              // nodes only report faults when they happen
@@ -158,6 +161,84 @@ bool RedarcRbus::is_our_peer_(const uint8_t *bda) {
          memcmp(bda, this->parent()->get_remote_bda(), 6) == 0;
 }
 
+// "3h12m", "4m05s", "12s".
+static std::string fmt_duration(uint32_t ms) {
+  uint32_t s = ms / 1000;
+  char buf[24];
+  if (s >= 3600)
+    snprintf(buf, sizeof(buf), "%uh%02um", (unsigned) (s / 3600), (unsigned) (s / 60 % 60));
+  else if (s >= 60)
+    snprintf(buf, sizeof(buf), "%um%02us", (unsigned) (s / 60), (unsigned) (s % 60));
+  else
+    snprintf(buf, sizeof(buf), "%us", (unsigned) s);
+  return buf;
+}
+
+// HCI disconnect reasons as reported in ESP_GATTC_DISCONNECT_EVT.
+static const char *disconnect_reason_name(int reason) {
+  switch (reason) {
+    case 0x05: return "Authentication failure";
+    case 0x06: return "Key missing (bond lost)";
+    case 0x08: return "Supervision timeout (Display stopped answering)";
+    case 0x13: return "Display closed the link";
+    case 0x16: return "ESP closed the link";
+    case 0x22: return "Link layer response timeout";
+    case 0x3b: return "Unacceptable connection parameters";
+    case 0x3d: return "MIC failure (encryption key mismatch)";
+    case 0x3e: return "Connection failed to establish";
+    case 0x100: return "Connection cancelled";
+    default: return "Unknown";
+  }
+}
+
+// SMP pairing failure reasons (Bluetooth Core spec, Vol 3 Part H 3.5.5).
+static const char *pairing_fail_name(int reason) {
+  switch (reason) {
+    case 0x01: return "Passkey entry failed";
+    case 0x03: return "Authentication requirements";
+    case 0x04: return "Confirm value failed (wrong code)";
+    case 0x05: return "Pairing not supported";
+    case 0x06: return "Encryption key size";
+    case 0x08: return "Unspecified";
+    case 0x09: return "Repeated attempts";
+    default: return "Other";
+  }
+}
+
+void RedarcRbus::set_link_status_(const char *status) {
+  if (this->link_status_ == status)
+    return;
+  this->link_status_ = status;
+  ESP_LOGI(TAG, "Link: %s", status);
+#ifdef USE_TEXT_SENSOR
+  if (this->link_status_text_ != nullptr)
+    this->link_status_text_->publish_state(status);
+#endif
+}
+
+void RedarcRbus::set_pairing_required_(bool on) {
+#ifdef USE_BINARY_SENSOR
+  if (this->pairing_required_ != nullptr)
+    this->pairing_required_->publish_state(on);
+#endif
+}
+
+// Whether the ESP still holds a bond (keys) for our Display. If it does and the Display asks
+// for a passkey anyway, the Display is the side that forgot the bond.
+bool RedarcRbus::esp_has_bond_() {
+  int n = esp_ble_get_bond_device_num();
+  if (n <= 0)
+    return false;
+  std::vector<esp_ble_bond_dev_t> list(n);
+  if (esp_ble_get_bond_device_list(&n, list.data()) != ESP_OK)
+    return false;
+  for (int i = 0; i < n; i++) {
+    if (this->is_our_peer_(list[i].bd_addr))
+      return true;
+  }
+  return false;
+}
+
 void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
     case ESP_GAP_BLE_PASSKEY_REQ_EVT: {
@@ -165,6 +246,26 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       if (!this->is_our_peer_(param->ble_security.ble_req.bd_addr))
         break;
       memcpy(this->pending_bda_, param->ble_security.ble_req.bd_addr, sizeof(esp_bd_addr_t));
+      {
+        this->paired_this_conn_ = true;
+        this->pairing_requests_++;
+        if (this->pairing_requests_sensor_ != nullptr)
+          this->pairing_requests_sensor_->publish_state(this->pairing_requests_);
+        const bool esp_bond = this->esp_has_bond_();
+        char buf[160];
+        snprintf(buf, sizeof(buf), "Code requested %s after connect, ESP uptime %s. %s",
+                 fmt_duration(millis() - this->connected_at_ms_).c_str(),
+                 fmt_duration(millis()).c_str(),
+                 esp_bond ? "ESP still had the bond: the Display forgot it"
+                          : "ESP had no bond for the Display");
+        ESP_LOGW(TAG, "%s", buf);
+#ifdef USE_TEXT_SENSOR
+        if (this->last_pairing_text_ != nullptr)
+          this->last_pairing_text_->publish_state(buf);
+#endif
+        this->set_pairing_required_(true);
+        this->set_link_status_("Pairing required: enter the code on the Display");
+      }
       // The Display shows a code that ROTATES, so a value entered long ago is
       // stale. Only auto-answer if a passkey was entered in the last 25 s
       // (i.e. you entered it and pressed Pair Now). Otherwise wait, and answer
@@ -198,12 +299,28 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       if (!this->is_our_peer_(param->ble_security.auth_cmpl.bd_addr))
         break;
       if (param->ble_security.auth_cmpl.success) {
-        ESP_LOGI(TAG, "Bonded with Display");
+        ESP_LOGI(TAG, "Bonded with Display (%s, auth mode %d, key type 0x%02x)",
+                 this->paired_this_conn_ ? "new pairing" : "saved bond",
+                 param->ble_security.auth_cmpl.auth_mode, param->ble_security.auth_cmpl.key_type);
+        this->set_pairing_required_(false);
+        this->set_link_status_("Bonded, starting stream");
+#ifdef USE_TEXT_SENSOR
+        if (this->paired_this_conn_ && this->last_pairing_text_ != nullptr)
+          this->last_pairing_text_->publish_state("Paired with a new code at ESP uptime " +
+                                                  fmt_duration(millis()));
+#endif
         this->bonded_ = true;
         this->start_notify_();
       } else {
-        ESP_LOGW(TAG, "Pairing failed, reason 0x%02x (wrong passkey?)",
-                 param->ble_security.auth_cmpl.fail_reason);
+        const int reason = param->ble_security.auth_cmpl.fail_reason;
+        char buf[96];
+        snprintf(buf, sizeof(buf), "Pairing failed: %s (0x%02x)", pairing_fail_name(reason), reason);
+        ESP_LOGW(TAG, "%s", buf);
+#ifdef USE_TEXT_SENSOR
+        if (this->last_pairing_text_ != nullptr)
+          this->last_pairing_text_->publish_state(buf);
+#endif
+        this->set_link_status_("Pairing failed");
       }
       break;
     default:
@@ -215,14 +332,40 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
                                      esp_ble_gattc_cb_param_t *param) {
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
-      if (param->open.status == ESP_GATT_OK) {
+      if (param->open.status != ESP_GATT_OK) {
+        ESP_LOGW(TAG, "Connect failed, status 0x%02x", param->open.status);
+        this->set_link_status_("Connect failed, retrying");
+      } else {
+        this->connected_at_ms_ = millis();
+        this->paired_this_conn_ = false;
+        ESP_LOGI(TAG, "Connected; ESP %s a saved bond for the Display (%d bonds stored)",
+                 this->esp_has_bond_() ? "has" : "has NO", esp_ble_get_bond_device_num());
+        this->set_link_status_("Connected, securing link");
         // Proactively bond; if a bond already exists the stack just re-encrypts.
         esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
       }
       break;
     }
     case ESP_GATTC_DISCONNECT_EVT: {
-      ESP_LOGD(TAG, "Disconnected");
+      {
+        const int reason = param->disconnect.reason;
+        const uint32_t now = millis();
+        char buf[200];
+        snprintf(buf, sizeof(buf), "%s (0x%02x) after %s connected; state was '%s'; last frame %s ago",
+                 disconnect_reason_name(reason), reason,
+                 fmt_duration(now - this->connected_at_ms_).c_str(), this->link_status_.c_str(),
+                 this->last_frame_ms_ == 0 ? "n/a" : fmt_duration(now - this->last_frame_ms_).c_str());
+        ESP_LOGW(TAG, "Disconnected: %s", buf);
+#ifdef USE_TEXT_SENSOR
+        if (this->last_disconnect_text_ != nullptr)
+          this->last_disconnect_text_->publish_state(buf);
+#endif
+        this->disconnects_++;
+        if (this->disconnects_sensor_ != nullptr)
+          this->disconnects_sensor_->publish_state(this->disconnects_);
+        this->set_pairing_required_(false);
+        this->set_link_status_("Disconnected, searching");
+      }
       this->have_handles_ = false;
       this->bonded_ = false;
       this->notify_started_ = false;
@@ -289,8 +432,10 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
     case ESP_GATTC_NOTIFY_EVT: {
       if (param->notify.handle == this->notify_handle_) {
         this->blink_activity_();
-        if (this->wake_tries_ != 0)
+        if (this->wake_tries_ != 0) {
           ESP_LOGI(TAG, "Telemetry resumed");
+          this->set_link_status_("Streaming");
+        }
         this->last_frame_ms_ = millis();
         this->wake_tries_ = 0;
         this->handle_frame_(param->notify.value, param->notify.value_len);
@@ -642,6 +787,7 @@ void RedarcRbus::keep_awake_check_(uint32_t now) {
   // new passkey, whereas staying connected keeps the bond and streaming resumes on wake.
   if (this->wake_tries_ == 0 && now - this->last_frame_ms_ >= KEEP_AWAKE_SILENCE_MS) {
     this->wake_tries_ = 1;  // "asleep" until the next frame (see ESP_GATTC_NOTIFY_EVT)
+    this->set_link_status_("Connected, system asleep (no telemetry)");
     ESP_LOGW(TAG, "No telemetry for %us: system asleep (e.g. Storage mode). Staying connected, "
                   "sending Keep Awake every %us",
              (unsigned) ((now - this->last_frame_ms_) / 1000), (unsigned) (KEEP_AWAKE_PERIOD_MS / 1000));
@@ -884,6 +1030,9 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
 void RedarcRbus::dump_config() {
   ESP_LOGCONFIG(TAG, "REDARC RedVision R-Bus BLE proxy:");
   ESP_LOGCONFIG(TAG, "  Passkey configured: %s", YESNO(this->have_passkey_));
+  ESP_LOGCONFIG(TAG, "  Saved bond for Display: %s (%d bonds stored)", YESNO(this->esp_has_bond_()),
+                esp_ble_get_bond_device_num());
+  ESP_LOGCONFIG(TAG, "  Link: %s", this->link_status_.c_str());
   for (auto &b : this->sensors_)
     LOG_SENSOR("  ", "Field", b.sensor);
   ESP_LOGCONFIG(TAG, "  Control read-back bindings: %u", (unsigned) this->listeners_.size());

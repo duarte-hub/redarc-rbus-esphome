@@ -44,6 +44,11 @@ sensor:
     ble_client_id: redarc_display
     passkey: 123456            # <-- the 6-digit code on Settings -> Bluetooth (no leading zero issues: it's an int)
     status_led: GPIO2
+    # Link diagnostics (counts since boot)
+    disconnects:
+      name: "BLE Disconnects"
+    pairing_requests:
+      name: "Pairing Requests"
     state_of_charge:
       name: "Battery State of Charge"
     voltage:
@@ -141,6 +146,8 @@ binary_sensor:
       name: "Load Disconnect Active"
     fault_active:
       name: "Fault Active"
+    pairing_required:
+      name: "Pairing Required"
     # Live state of any IO channel (outputs and digital inputs).
     digital_channels:
       - channel: 15
@@ -173,6 +180,12 @@ text_sensor:
       name: "Channel Names"
     active_faults:
       name: "Active Faults"
+    link_status:
+      name: "BLE Link Status"
+    last_disconnect:
+      name: "BLE Last Disconnect"
+    last_pairing:
+      name: "BLE Last Pairing"
     soc_hourly_log:
       name: "SoC Hourly Log"
     soc_daily_min_log:

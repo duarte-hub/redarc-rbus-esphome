@@ -12,6 +12,13 @@ CONF_CHANNEL = "channel"
 CONF_CHANNEL_NAMES = "channel_names"
 CONF_ACTIVE_FAULTS = "active_faults"
 
+# Link diagnostics: (setter, icon).
+DIAGNOSTICS = {
+    "link_status": ("set_link_status_sensor", "mdi:bluetooth-connect"),
+    "last_disconnect": ("set_last_disconnect_sensor", "mdi:bluetooth-off"),
+    "last_pairing": ("set_last_pairing_sensor", "mdi:key-wireless"),
+}
+
 # History logs read from the Display's cache every `history_interval` (sensor hub option),
 # published as "newest,...,oldest": (pgn, values per frame, bytes per value, max entries, icon).
 LOGS = {
@@ -79,6 +86,10 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_CHANNEL_NAMES): text_sensor.text_sensor_schema(
             icon="mdi:tag-text-outline", entity_category="diagnostic"
         ),
+        **{
+            cv.Optional(key): text_sensor.text_sensor_schema(icon=d[1], entity_category="diagnostic")
+            for key, d in DIAGNOSTICS.items()
+        },
         cv.Optional(CONF_CHANNEL_STATUS): cv.ensure_list(
             text_sensor.text_sensor_schema(icon="mdi:information-outline").extend(
                 {cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=250)}
@@ -104,6 +115,10 @@ async def to_code(config):
     if CONF_CHANNEL_NAMES in config:
         sens = await text_sensor.new_text_sensor(config[CONF_CHANNEL_NAMES])
         cg.add(parent.set_labels_sensor(sens))
+    for key, (setter, _) in DIAGNOSTICS.items():
+        if key in config:
+            sens = await text_sensor.new_text_sensor(config[key])
+            cg.add(getattr(parent, setter)(sens))
     for conf in config.get(CONF_CHANNEL_STATUS, []):
         sens = await text_sensor.new_text_sensor(conf)
         cg.add(parent.add_text_sensor(sens, 130304, 2, 6, conf[CONF_CHANNEL], 7, 1,

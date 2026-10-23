@@ -11,6 +11,7 @@ CONF_DIGITAL_CHANNELS = "digital_channels"
 CONF_IO_ALARMS = "io_alarms"
 CONF_CHANNEL = "channel"
 CONF_FAULT_ACTIVE = "fault_active"
+CONF_PAIRING_REQUIRED = "pairing_required"
 
 # 2-bit J1939 booleans (0 = off, 1 = on, 2 = error, 3 = n/a), from the RedVision app's PGN
 # catalogue: (pgn, byte, bit, device_class, icon).
@@ -41,6 +42,10 @@ CONFIG_SCHEMA = cv.Schema(
         },
         # On while any node reports an active fault (details: `active_faults` text sensor).
         cv.Optional(CONF_FAULT_ACTIVE): binary_sensor.binary_sensor_schema(device_class="problem"),
+        # On while the Display waits for its 6-digit code (use it to trigger a notification).
+        cv.Optional(CONF_PAIRING_REQUIRED): binary_sensor.binary_sensor_schema(
+            device_class="problem", icon="mdi:key-alert", entity_category="diagnostic"
+        ),
         cv.Optional(CONF_DIGITAL_CHANNELS): cv.ensure_list(
             binary_sensor.binary_sensor_schema(icon="mdi:electric-switch").extend(_CHANNEL_SCHEMA)
         ),
@@ -60,6 +65,9 @@ async def to_code(config):
     if CONF_FAULT_ACTIVE in config:
         sens = await binary_sensor.new_binary_sensor(config[CONF_FAULT_ACTIVE])
         cg.add(parent.set_fault_active_sensor(sens))
+    if CONF_PAIRING_REQUIRED in config:
+        sens = await binary_sensor.new_binary_sensor(config[CONF_PAIRING_REQUIRED])
+        cg.add(parent.set_pairing_required_sensor(sens))
     for key, (pgn, per_frame, slot_bytes) in (
         (CONF_DIGITAL_CHANNELS, DIGITAL_IO_STATUS),
         (CONF_IO_ALARMS, IO_ALARM_STATUS),

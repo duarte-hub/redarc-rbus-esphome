@@ -186,6 +186,19 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
 #ifdef USE_TEXT_SENSOR
   void set_labels_sensor(text_sensor::TextSensor *s) { this->labels_sensor_ = s; }
 #endif
+
+  // Link diagnostics, so HA history shows when and why the link dropped or the bond was lost.
+#ifdef USE_TEXT_SENSOR
+  void set_link_status_sensor(text_sensor::TextSensor *s) { this->link_status_text_ = s; }
+  void set_last_disconnect_sensor(text_sensor::TextSensor *s) { this->last_disconnect_text_ = s; }
+  void set_last_pairing_sensor(text_sensor::TextSensor *s) { this->last_pairing_text_ = s; }
+#endif
+#ifdef USE_BINARY_SENSOR
+  void set_pairing_required_sensor(binary_sensor::BinarySensor *s) { this->pairing_required_ = s; }
+#endif
+  void set_disconnects_sensor(sensor::Sensor *s) { this->disconnects_sensor_ = s; }
+  void set_pairing_requests_sensor(sensor::Sensor *s) { this->pairing_requests_sensor_ = s; }
+
   // Optional activity LED: pulsed whenever BLE frames flow (e.g. the onboard
   // blue LED on GPIO2 of a standard esp32dev board).
   void set_status_led(GPIOPin *pin) { this->status_led_ = pin; }
@@ -298,6 +311,26 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   uint32_t conn_interval_ms_{0};
   void request_conn_interval_();
   uint32_t last_rssi_ms_{0};
+
+  // Link diagnostics.
+  void set_link_status_(const char *status);
+  void set_pairing_required_(bool on);
+  bool esp_has_bond_();
+  std::string link_status_;
+  uint32_t connected_at_ms_{0};
+  bool paired_this_conn_{false};  // a passkey was requested on the current connection
+  uint32_t disconnects_{0};
+  uint32_t pairing_requests_{0};
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *link_status_text_{nullptr};
+  text_sensor::TextSensor *last_disconnect_text_{nullptr};
+  text_sensor::TextSensor *last_pairing_text_{nullptr};
+#endif
+#ifdef USE_BINARY_SENSOR
+  binary_sensor::BinarySensor *pairing_required_{nullptr};
+#endif
+  sensor::Sensor *disconnects_sensor_{nullptr};
+  sensor::Sensor *pairing_requests_sensor_{nullptr};
 
   uint32_t passkey_{0};
   bool have_passkey_{false};

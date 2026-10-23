@@ -22,6 +22,8 @@ CONF_BATTERY_POWER = "battery_power"
 CONF_SOLAR_POWER = "solar_power"
 CONF_ANALOG_CHANNELS = "analog_channels"
 CONF_CHANNEL = "channel"
+CONF_DISCONNECTS = "disconnects"
+CONF_PAIRING_REQUESTS = "pairing_requests"
 
 # R-Bus fields, from the RedVision app's generated PGN catalogue (see pgn_table.md in the
 # research repo). Each: (pgn, start byte, start bit, bits, offset, scale) then entity defaults
@@ -138,6 +140,15 @@ CONFIG_SCHEMA = (
                 state_class=STATE_CLASS_MEASUREMENT,
                 entity_category="diagnostic",
             ),
+            # Link diagnostics: BLE disconnects / passkey requests since the ESP booted.
+            **{
+                cv.Optional(key): sensor.sensor_schema(
+                    accuracy_decimals=0, icon=icon, entity_category="diagnostic",
+                    state_class="total_increasing",
+                )
+                for key, icon in ((CONF_DISCONNECTS, "mdi:bluetooth-off"),
+                                  (CONF_PAIRING_REQUESTS, "mdi:key-wireless"))
+            },
             # How often to poll connection RSSI (set 0s to disable polling).
             cv.Optional(
                 CONF_RSSI_UPDATE_INTERVAL, default="60s"
@@ -196,6 +207,12 @@ async def to_code(config):
     if CONF_RSSI in config:
         sens = await sensor.new_sensor(config[CONF_RSSI])
         cg.add(var.set_rssi_sensor(sens))
+    if CONF_DISCONNECTS in config:
+        sens = await sensor.new_sensor(config[CONF_DISCONNECTS])
+        cg.add(var.set_disconnects_sensor(sens))
+    if CONF_PAIRING_REQUESTS in config:
+        sens = await sensor.new_sensor(config[CONF_PAIRING_REQUESTS])
+        cg.add(var.set_pairing_requests_sensor(sens))
     cg.add(var.set_rssi_interval(config[CONF_RSSI_UPDATE_INTERVAL].total_milliseconds))
     cg.add(var.set_conn_interval(config[CONF_CONNECTION_INTERVAL].total_milliseconds))
     cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
