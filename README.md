@@ -280,6 +280,16 @@ cap (about ±50000 min), and at full charge the sign flips with each Float / Bat
 cycle, so the numeric sensor is unknown when full or over 28 days instead of swinging
 between those values.
 
+## Pairing gate
+
+Without a stored bond the ESP stays off the Display until you enter a code: open
+Settings > Bluetooth on the Display, type the code it shows into the pairing-code number,
+and the ESP connects and answers the Display's passkey request straight away. `link_status`
+shows "Waiting for pairing code" and `pairing_required` is on meanwhile. After three
+connects in a row that never reach streaming, retries back off (30 s, 1, 2, 4, 5 min);
+entering a code skips the wait. Before this, the ESP retried every ~25 s and each doomed
+pairing attempt kept the Display refusing it.
+
 ## Link diagnostics
 
 Optional entities to explain dropouts and lost bonds. They are published the moment

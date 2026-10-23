@@ -71,6 +71,7 @@ static const uint32_t PUBLISH_HEARTBEAT_MS = 60000;
 void RedarcRbus::setup() {
   this->configure_security_();
   this->setup_done_ = true;
+  this->esp_bonded_ = this->esp_has_bond_();
   this->set_link_status_("Searching");
   if (this->status_led_ != nullptr) {
     this->status_led_->setup();
@@ -122,6 +123,7 @@ void RedarcRbus::loop() {
   this->label_read_step_(now);
   this->request_history_();
   this->keep_awake_check_(now);
+  this->update_gate_(now);
 #ifdef USE_TEXT_SENSOR
   this->publish_logs_(now);
 #endif
@@ -139,6 +141,8 @@ void RedarcRbus::loop() {
       this->set_link_status_("Streaming");
     } else {
       this->set_link_status_("Streaming");
+      this->reached_stream_ = true;
+      this->fail_streak_ = 0;
       this->set_coex_prefer_bt_(false);
       this->request_conn_interval_();
       this->history_next_ms_ = now + 2000;  // first history read shortly after streaming starts
@@ -272,8 +276,7 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       // stale. Only auto-answer if a passkey was entered in the last 25 s
       // (i.e. you entered it and pressed Pair Now). Otherwise wait, and answer
       // as soon as you enter the code the Display is showing now.
-      const bool fresh = this->have_passkey_ && this->last_passkey_set_ms_ != 0 &&
-                         (millis() - this->last_passkey_set_ms_ < 25000);
+      const bool fresh = this->have_passkey_ && this->code_fresh_(millis());
       if (fresh) {
         ESP_LOGI(TAG, "Passkey requested; replying with recently-entered code %06u",
                  (unsigned) this->passkey_);
@@ -307,6 +310,7 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
                  param->ble_security.auth_cmpl.auth_mode, param->ble_security.auth_cmpl.key_type);
         this->set_pairing_required_(false);
         this->set_link_status_("Bonded, starting stream");
+        this->esp_bonded_ = true;
 #ifdef USE_TEXT_SENSOR
         if (this->paired_this_conn_ && this->last_pairing_text_ != nullptr)
           this->last_pairing_text_->publish_state("Paired with a new code at ESP uptime " +
@@ -340,6 +344,8 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         this->set_link_status_("Connect failed, retrying");
       } else {
         this->connected_at_ms_ = millis();
+        this->link_up_ = true;
+        this->reached_stream_ = false;
         this->paired_this_conn_ = false;
         ESP_LOGI(TAG, "Connected; ESP %s saved bond for the Display (%d bonds stored)",
                  this->esp_has_bond_() ? "has a" : "has NO", esp_ble_get_bond_device_num());
@@ -369,6 +375,17 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         this->set_pairing_required_(false);
         this->set_link_status_("Disconnected, searching");
         this->set_coex_prefer_bt_(true);  // reconnect + discovery need the radio
+        this->link_up_ = false;
+        this->esp_bonded_ = this->esp_has_bond_();
+        if (!this->reached_stream_ && this->fail_streak_ < 255)
+          this->fail_streak_++;
+        if (this->fail_streak_ >= 3) {
+          const uint8_t steps = std::min<uint8_t>(this->fail_streak_ - 3, 4);
+          const uint32_t wait = std::min<uint32_t>(30000u << steps, 300000u);
+          this->backoff_until_ = now + wait;
+          ESP_LOGW(TAG, "%u connects in a row failed; waiting %us before the next attempt",
+                   (unsigned) this->fail_streak_, (unsigned) (wait / 1000));
+        }
       }
       this->have_handles_ = false;
       this->bonded_ = false;
@@ -950,6 +967,32 @@ void RedarcRbus::publish_power_(sensor::Sensor *s, PublishGate &gate, uint64_t p
   const float w = roundf(v * i * 10.0f) / 10.0f;
   if (gate.due(w, now, this->min_publish_ms_))
     s->publish_state(w);
+}
+
+void RedarcRbus::update_gate_(uint32_t now) {
+  if (this->parent() == nullptr || this->link_up_ || now - this->last_gate_ms_ < 500)
+    return;
+  this->last_gate_ms_ = now;
+  const bool fresh = this->code_fresh_(now);
+  const bool backing_off = (int32_t) (this->backoff_until_ - now) > 0;
+  // A freshly entered code always opens the gate: the user is at the Display right now.
+  const bool open = fresh || (this->esp_bonded_ && !backing_off);
+  if (open == this->gate_open_)
+    return;
+  this->gate_open_ = open;
+  this->parent()->set_enabled(open);
+  if (open) {
+    if (fresh)
+      this->backoff_until_ = 0;
+    this->set_pairing_required_(false);
+    this->set_link_status_(fresh ? "Code entered, connecting" : "Disconnected, searching");
+  } else if (!this->esp_bonded_) {
+    this->set_pairing_required_(true);
+    this->set_link_status_("Waiting for pairing code: open Settings > Bluetooth on the Display "
+                           "and enter the code shown");
+  } else {
+    this->set_link_status_("Paused after repeated failed connects, retrying soon");
+  }
 }
 
 // Coexistence: ESPHome sets "prefer Bluetooth" to connect and only reverts once no BLE

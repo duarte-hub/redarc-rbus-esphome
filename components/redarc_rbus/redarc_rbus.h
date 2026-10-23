@@ -27,6 +27,7 @@
 #include <esp_coexist.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <set>
@@ -339,6 +340,22 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   std::string link_status_;
   uint32_t connected_at_ms_{0};
   bool paired_this_conn_{false};  // a passkey was requested on the current connection
+
+  // Connection gate: without a stored bond, stay off the Display until a code is entered (then
+  // answer its passkey request at once); back off after repeated failed connects. Hammering the
+  // Display with doomed pairing attempts kept it refusing us.
+  void update_gate_(uint32_t now);
+  bool code_fresh_(uint32_t now) const {
+    return this->last_passkey_set_ms_ != 0 && now - this->last_passkey_set_ms_ < PASSKEY_FRESH_MS;
+  }
+  static const uint32_t PASSKEY_FRESH_MS = 30000;
+  bool link_up_{false};          // BLE connection open (OPEN .. DISCONNECT)
+  bool reached_stream_{false};   // current connection got as far as streaming
+  bool esp_bonded_{false};       // cached esp_has_bond_()
+  bool gate_open_{true};
+  uint8_t fail_streak_{0};       // consecutive connections that never reached streaming
+  uint32_t backoff_until_{0};
+  uint32_t last_gate_ms_{0};
   uint32_t disconnects_{0};
   uint32_t pairing_requests_{0};
 #ifdef USE_TEXT_SENSOR
