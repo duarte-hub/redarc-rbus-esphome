@@ -18,14 +18,12 @@ static const char *const TAG = "redarc_rbus";
 // broadcast). The app only sends it when it connects; the keep-awake watchdog re-sends it.
 static const uint8_t INIT_8001[] = {0x2f, 0xe6, 0xff, 0xfa, 0x08, 0xff, 0xff,
                                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-// The TVMS goes to sleep after a while and stops streaming while the BLE link stays up. If no
-// frame arrives for this long, send Keep Awake; after KEEP_AWAKE_MAX_TRIES silent periods,
-// drop the link so the full connect sequence (Keep Awake + filters) runs again.
+// The TVMS sleeps (by design in Storage mode) and stops streaming while the BLE link stays
+// up. Keep Awake is sent every KEEP_AWAKE_PERIOD_MS while connected; silence longer than
+// KEEP_AWAKE_SILENCE_MS is logged once as "asleep". The link is kept: reconnecting to a
+// sleeping system cost the BLE bond.
 static const uint32_t KEEP_AWAKE_SILENCE_MS = 30000;
-// Also send Keep Awake this often while streaming, so the system doesn't fall asleep in the
-// first place (a sleeping DISP4300 also forgets its BLE bond, which then needs a new passkey).
 static const uint32_t KEEP_AWAKE_PERIOD_MS = 60000;
-static const uint8_t KEEP_AWAKE_MAX_TRIES = 3;
 
 // The 32 filter-enrollment frames the RedVision app writes to char 8002, in order.
 // Each is [index][0x2a][...]; they tell the R-Bus gateway which PGNs to forward.
@@ -640,27 +638,17 @@ void RedarcRbus::keep_awake_check_(uint32_t now) {
   if (!this->keep_awake_ || !this->ready() || this->sending_filters_ ||
       this->label_phase_ != LabelPhase::IDLE || this->last_frame_ms_ == 0)
     return;
-  const uint32_t since = this->wake_tries_ == 0 ? this->last_frame_ms_ : this->last_wake_ms_;
-  if (now - since < KEEP_AWAKE_SILENCE_MS) {
-    // Streaming normally: periodic Keep Awake.
-    if (this->wake_tries_ == 0 && now - this->last_wake_ms_ >= KEEP_AWAKE_PERIOD_MS) {
-      this->last_wake_ms_ = now;
-      this->send_command(std::vector<uint8_t>(INIT_8001, INIT_8001 + sizeof(INIT_8001)));
-    }
-    return;
+  // Never drop the link here: reconnecting while the system sleeps made the Display ask for a
+  // new passkey, whereas staying connected keeps the bond and streaming resumes on wake.
+  if (this->wake_tries_ == 0 && now - this->last_frame_ms_ >= KEEP_AWAKE_SILENCE_MS) {
+    this->wake_tries_ = 1;  // "asleep" until the next frame (see ESP_GATTC_NOTIFY_EVT)
+    ESP_LOGW(TAG, "No telemetry for %us: system asleep (e.g. Storage mode). Staying connected, "
+                  "sending Keep Awake every %us",
+             (unsigned) ((now - this->last_frame_ms_) / 1000), (unsigned) (KEEP_AWAKE_PERIOD_MS / 1000));
   }
-  if (this->wake_tries_ >= KEEP_AWAKE_MAX_TRIES) {
-    ESP_LOGW(TAG, "No telemetry for %us after %u wake attempts; reconnecting to the Display",
-             (unsigned) ((now - this->last_frame_ms_) / 1000), this->wake_tries_);
-    this->wake_tries_ = 0;
-    this->last_frame_ms_ = 0;  // re-armed when the new subscription starts
-    esp_ble_gap_disconnect(this->parent()->get_remote_bda());
+  if (now - this->last_wake_ms_ < KEEP_AWAKE_PERIOD_MS)
     return;
-  }
-  this->wake_tries_++;
   this->last_wake_ms_ = now;
-  ESP_LOGW(TAG, "No telemetry for %us (system asleep?); sending Keep Awake (%u/%u)",
-           (unsigned) ((now - this->last_frame_ms_) / 1000), this->wake_tries_, KEEP_AWAKE_MAX_TRIES);
   this->send_command(std::vector<uint8_t>(INIT_8001, INIT_8001 + sizeof(INIT_8001)));
 }
 
