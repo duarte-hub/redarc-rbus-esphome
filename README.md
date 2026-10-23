@@ -166,7 +166,7 @@ Once bonded, the keys are stored and you're set until the next full erase.
 | `status_led` | no | GPIO pin pulsed on BLE traffic |
 | `rssi` / `rssi_update_interval` | no | BLE link RSSI sensor, poll interval (default 60s) |
 | `min_publish_interval` | no | Changed sensor values go to HA at most this often (default `5s`, `0s` = every change). Switches, selects and text stay instant |
-| `keep_awake` | no | Re-wake the TVMS when telemetry stops: after 30 s of silence send the app's Keep Awake frame, after 3 tries reconnect (default `true`; `false` lets the system sleep and saves a little battery) |
+| `keep_awake` | no | Send the app's Keep Awake frame every 60 s while connected, and if telemetry stops: after 30 s of silence send it again, after 3 tries reconnect. A sleeping DISP4300 also forgets its BLE pairing (default `true`; `false` lets the system sleep and saves a little battery) |
 | `history_interval` | no | How often to read the Display's cached history logs (default `15min`, `0s` = never) |
 | `load_disconnect_node` | no | Load Disconnect Status is sent by both the charger (`0x01`) and the distribution box (`0x24`) with different set-points; entities follow this node (default `0x24`) |
 | `connection_interval` | no | Experimental: BLE connection interval to request once streaming (default `0ms` = leave as negotiated) |

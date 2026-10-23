@@ -22,6 +22,9 @@ static const uint8_t INIT_8001[] = {0x2f, 0xe6, 0xff, 0xfa, 0x08, 0xff, 0xff,
 // frame arrives for this long, send Keep Awake; after KEEP_AWAKE_MAX_TRIES silent periods,
 // drop the link so the full connect sequence (Keep Awake + filters) runs again.
 static const uint32_t KEEP_AWAKE_SILENCE_MS = 30000;
+// Also send Keep Awake this often while streaming, so the system doesn't fall asleep in the
+// first place (a sleeping DISP4300 also forgets its BLE bond, which then needs a new passkey).
+static const uint32_t KEEP_AWAKE_PERIOD_MS = 60000;
 static const uint8_t KEEP_AWAKE_MAX_TRIES = 3;
 
 // The 32 filter-enrollment frames the RedVision app writes to char 8002, in order.
@@ -638,8 +641,14 @@ void RedarcRbus::keep_awake_check_(uint32_t now) {
       this->label_phase_ != LabelPhase::IDLE || this->last_frame_ms_ == 0)
     return;
   const uint32_t since = this->wake_tries_ == 0 ? this->last_frame_ms_ : this->last_wake_ms_;
-  if (now - since < KEEP_AWAKE_SILENCE_MS)
+  if (now - since < KEEP_AWAKE_SILENCE_MS) {
+    // Streaming normally: periodic Keep Awake.
+    if (this->wake_tries_ == 0 && now - this->last_wake_ms_ >= KEEP_AWAKE_PERIOD_MS) {
+      this->last_wake_ms_ = now;
+      this->send_command(std::vector<uint8_t>(INIT_8001, INIT_8001 + sizeof(INIT_8001)));
+    }
     return;
+  }
   if (this->wake_tries_ >= KEEP_AWAKE_MAX_TRIES) {
     ESP_LOGW(TAG, "No telemetry for %us after %u wake attempts; reconnecting to the Display",
              (unsigned) ((now - this->last_frame_ms_) / 1000), this->wake_tries_);
