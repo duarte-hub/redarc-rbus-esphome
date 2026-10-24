@@ -282,13 +282,13 @@ between those values.
 
 ## Pairing gate
 
-Without a stored bond the ESP stays off the Display until you enter a code: open
-Settings > Bluetooth on the Display, type the code it shows into the pairing-code number,
-and the ESP connects and answers the Display's passkey request straight away. `link_status`
-shows "Waiting for pairing code" and `pairing_required` is on meanwhile. After three
-connects in a row that never reach streaming, retries back off (30 s, 1, 2, 4, 5 min);
-entering a code skips the wait. Before this, the ESP retried every ~25 s and each doomed
-pairing attempt kept the Display refusing it.
+The Display only shows its code once a central connects and asks to pair. Without a stored
+bond the ESP stays off the Display until you press **Pair Now**: it then connects for up to
+60 s, the Display shows a code, and typing that code into the pairing-code number answers
+the request. `link_status` reads "Not paired: press Pair Now..." and `pairing_required` is on
+meanwhile; a failed pairing closes the window (one attempt per press). After three connects
+in a row that never reach streaming, retries back off (30 s, 1, 2, 4, 5 min). Before this
+the ESP retried every ~25 s and each doomed pairing attempt kept the Display refusing it.
 
 ## Link diagnostics
 

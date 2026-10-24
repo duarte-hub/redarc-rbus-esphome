@@ -109,8 +109,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // Set the pairing passkey. If the Display is currently waiting at a passkey
   // prompt, this answers it immediately (so you enter the code it shows *now*).
   void set_passkey(uint32_t passkey);
-  // Pair using the code currently in the pairing-code box (as if just entered): connects if
-  // idle, answers a pending passkey request, or re-pairs an existing link.
+  // Start pairing: connect for up to 60 s without a stored bond so the Display shows its code,
+  // then answer with the code entered into the pairing-code box. Re-pairs an existing link.
   void pair_now();
 
   // Set the Display's BLE MAC at runtime (e.g. from a text field in HA), as
@@ -356,6 +356,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   uint8_t fail_streak_{0};       // consecutive connections that never reached streaming
   uint32_t backoff_until_{0};
   uint32_t last_gate_ms_{0};
+  uint32_t pair_window_until_{0};  // Pair Now: connect without a code so the Display shows one
+  static const uint32_t PAIR_WINDOW_MS = 60000;
   uint32_t disconnects_{0};
   uint32_t pairing_requests_{0};
 #ifdef USE_TEXT_SENSOR
