@@ -504,17 +504,27 @@ void RedarcRbus::set_remote_mac(const std::string &mac) {
 void RedarcRbus::pair_now() {
   if (this->parent() == nullptr)
     return;
-  uint8_t *bda = this->parent()->get_remote_bda();
-  ESP_LOGI(TAG, "Re-pairing: removing stored bond and reconnecting");
-  // Drop any old bond so the Display issues a fresh passkey challenge, which we
-  // answer with the currently-configured (just-entered) rotating code.
-  esp_ble_remove_bond_device(bda);
-  this->bonded_ = false;
-  this->notify_started_ = false;
-  this->sending_filters_ = false;
-  this->filter_idx_ = 0;
-  // Disconnect if connected; the ble_client auto-reconnects and pairing restarts.
-  esp_ble_gap_disconnect(bda);
+  if (!this->have_passkey_) {
+    ESP_LOGW(TAG, "Pair Now: enter the code shown on the Display into the pairing code first");
+    return;
+  }
+  // Treat the code in the pairing-code box as just entered: this opens the connection gate
+  // (see update_gate_()) and answers the Display's passkey request with it straight away.
+  this->last_passkey_set_ms_ = millis();
+  if (this->passkey_pending_) {
+    ESP_LOGI(TAG, "Pair Now: answering pending pairing with code %06u", (unsigned) this->passkey_);
+    esp_ble_passkey_reply(this->pending_bda_, true, this->passkey_);
+    this->passkey_pending_ = false;
+    return;
+  }
+  ESP_LOGI(TAG, "Pair Now: connecting with code %06u", (unsigned) this->passkey_);
+  // When already linked on an old bond, drop it so the Display issues a fresh passkey challenge.
+  if (this->link_up_) {
+    uint8_t *bda = this->parent()->get_remote_bda();
+    esp_ble_remove_bond_device(bda);
+    this->esp_bonded_ = false;
+    esp_ble_gap_disconnect(bda);
+  }
 }
 
 bool RedarcRbus::send_command(const std::vector<uint8_t> &frame) {
