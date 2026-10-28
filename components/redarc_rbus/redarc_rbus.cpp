@@ -272,21 +272,12 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
         this->set_pairing_required_(true);
         this->set_link_status_("Pairing required: enter the code on the Display");
       }
-      // The Display shows a code that ROTATES, so a value entered long ago is
-      // stale. Only auto-answer if a passkey was entered in the last 25 s
-      // (i.e. you entered it and pressed Pair Now). Otherwise wait, and answer
-      // as soon as you enter the code the Display is showing now.
-      const bool fresh = this->have_passkey_ && this->code_fresh_(millis());
-      if (fresh) {
-        ESP_LOGI(TAG, "Passkey requested; replying with recently-entered code %06u",
-                 (unsigned) this->passkey_);
-        esp_ble_passkey_reply(this->pending_bda_, true, this->passkey_);
-        this->passkey_pending_ = false;
-      } else {
-        this->passkey_pending_ = true;
-        ESP_LOGW(TAG, "Display is requesting pairing. Enter the 6-digit code it is "
-                      "showing NOW into 'REDARC Pairing Code' (within ~30 s).");
-      }
+      // The Display picks a new random code for every pairing attempt and gives up after
+      // ~7 s, so a code typed earlier can never match. Always wait for the code the Display
+      // is showing now; set_passkey() answers as soon as it is entered.
+      this->passkey_pending_ = true;
+      ESP_LOGW(TAG, "Display is requesting pairing. Enter the 6-digit code it is showing "
+                    "NOW into 'REDARC Pairing Code' (the Display gives up after ~7 s).");
       break;
     }
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
@@ -979,21 +970,17 @@ void RedarcRbus::update_gate_(uint32_t now) {
   if (this->parent() == nullptr || this->link_up_ || now - this->last_gate_ms_ < 500)
     return;
   this->last_gate_ms_ = now;
-  const bool fresh = this->code_fresh_(now);
   const bool backing_off = (int32_t) (this->backoff_until_ - now) > 0;
   const bool pairing = (int32_t) (this->pair_window_until_ - now) > 0;
-  // A freshly entered code or Pair Now always opens the gate: the user is at the Display.
-  const bool open = fresh || pairing || (this->esp_bonded_ && !backing_off);
+  // Pair Now always opens the gate: the user is at the Display.
+  const bool open = pairing || (this->esp_bonded_ && !backing_off);
   if (open == this->gate_open_)
     return;
   this->gate_open_ = open;
   this->parent()->set_enabled(open);
   if (open) {
-    if (fresh)
-      this->backoff_until_ = 0;
     this->set_pairing_required_(false);
     this->set_link_status_(pairing  ? "Pair Now: connecting, the Display will show a code"
-                           : fresh  ? "Code entered, connecting"
                                     : "Disconnected, searching");
   } else if (!this->esp_bonded_) {
     this->set_pairing_required_(true);
