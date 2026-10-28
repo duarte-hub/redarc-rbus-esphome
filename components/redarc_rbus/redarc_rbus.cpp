@@ -346,8 +346,19 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         // With a bond, re-encrypt at once. Without one, wait for service discovery to finish
         // before starting pairing, like the app does. Starting SMP during discovery coincided
         // with the Display going silent until the link timed out.
-        if (this->esp_has_bond_())
+        if (this->esp_has_bond_()) {
           esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        } else {
+          // The app's captured pairing link runs at a 30 ms interval, latency 0 and survives
+          // 9+ s of waiting for the passkey. Ask for the same so the Display keeps answering.
+          esp_ble_conn_update_params_t p = {};
+          memcpy(p.bda, param->open.remote_bda, sizeof(esp_bd_addr_t));
+          p.min_int = 24;  // 30 ms (1.25 ms units)
+          p.max_int = 24;
+          p.latency = 0;
+          p.timeout = 600;
+          esp_ble_gap_update_conn_params(&p);
+        }
       }
       break;
     }
