@@ -343,8 +343,11 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         ESP_LOGI(TAG, "Connected; ESP %s saved bond for the Display (%d bonds stored)",
                  this->esp_has_bond_() ? "has a" : "has NO", esp_ble_get_bond_device_num());
         this->set_link_status_("Connected, securing link");
-        // Proactively bond; if a bond already exists the stack just re-encrypts.
-        esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        // With a bond, re-encrypt at once. Without one, wait for service discovery to finish
+        // before starting pairing, like the app does. Starting SMP during discovery coincided
+        // with the Display going silent until the link timed out.
+        if (this->esp_has_bond_())
+          esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
       }
       break;
     }
@@ -417,6 +420,8 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->have_handles_ = true;
       ESP_LOGD(TAG, "Found 8001=0x%04x (notify) 8002=0x%04x (write)", this->notify_handle_,
                this->write_handle_);
+      if (!this->esp_has_bond_())
+        esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
       this->start_notify_();  // runs only once we are also bonded
       break;
     }
