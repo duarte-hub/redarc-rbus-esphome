@@ -8,7 +8,7 @@
     ['sensor', 'DC Input Current', 0], ['sensor', 'Solar Current', 0], ['sensor', 'AC Input Current', 0],
     ['sensor', 'Solar Power', 0], ['sensor', 'Solar Energy Today', 4],
     ['sensor', 'Tank 1 Level', 8], ['sensor', 'Tank 2 Level', 32],
-    ['sensor', 'BLE Signal', -71], ['sensor', 'ESP WiFi Signal', -58],
+    ['sensor', 'BLE Signal', -71], ['sensor', 'ESP WiFi Signal', -58], ['sensor', 'Zigbee Signal', -64],
     ['binary_sensor', 'DC Input Active', false], ['binary_sensor', 'Solar Input Active', false], ['binary_sensor', 'AC Input Active', false],
     ['binary_sensor', 'Pairing Required', false],
     ['text_sensor', 'Charging Stage', 'Not Charging'], ['text_sensor', 'BLE Link Status', 'Connected'],

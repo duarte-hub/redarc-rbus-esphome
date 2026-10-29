@@ -418,3 +418,27 @@ page menu). After any change to the entity list, remove the device in Zigbee2MQT
 pair it again. The ESP32-C6 shares one radio between Wi-Fi, Bluetooth and Zigbee, so watch the
 Display link after enabling it; ESPHome's docs note C6 boards that only work close to the
 coordinator.
+
+### Zigbee signal strength
+
+`components/zigbee_link` adds the RSSI and LQI of the link to the Zigbee parent (the coordinator
+or router the ESP joined through), read from the stack's neighbor table. ESPHome has no sensor
+for this. Add it to `external_components` and to `sensor:`:
+
+```yaml
+external_components:
+  - source: github://duarte-hub/redarc-rbus-esphome@main
+    components: [redarc_rbus, zigbee_link]
+
+sensor:
+  - platform: zigbee_link
+    rssi:
+      name: "Zigbee Signal"
+    lqi:
+      name: "Zigbee LQI"
+    update_interval: 30s
+```
+
+Both read as unknown until the ESP has joined a network. They are not exposed back over Zigbee
+(Zigbee2MQTT already shows `linkquality`). The web page shows a Zigbee signal row in its menu
+when a sensor named like "Zigbee Signal" exists.

@@ -322,6 +322,7 @@
       '<div class="ds">Connection</div>' +
       '<div class="srow"><span>Display link</span><b>' + esc(txt(/link status/i) || '--') + '</b></div>' +
       sig('Wi-Fi signal', wifi, [-50, -60, -70]) + sig('Bluetooth signal', ble, [-60, -75, -85]) +
+      (find(/zigbee (signal|rssi)/i, 'sensor') ? sig('Zigbee signal', num(/zigbee (signal|rssi)/i), [-60, -75, -85]) : '') +
       '<div class="ds">Pairing</div>' +
       (on(/pairing required/i) ? '<p class="warn">The Display has not bonded with this unit yet.</p>' : '') +
       '<p class="mut">1. Open <i>Settings → Bluetooth</i> on the Display.<br>2. Tap Pair Now.<br>3. Enter the 6-digit code the Display shows.</p>' +
