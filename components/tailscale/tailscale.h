@@ -53,6 +53,10 @@ class TailscaleComponent : public Component {
   void apply_debug_log(bool enabled);
   void apply_runtime_auth_key(const std::string &key);
   bool is_auth_key_overridden() const { return this->auth_key_overridden_; }
+  // redarc-rbus-esphome: true when there is a key to register with (YAML or one saved on the device).
+  bool has_auth_key() const {
+    return !(this->auth_key_overridden_ ? this->runtime_auth_key_ : this->auth_key_).empty();
+  }
 #ifdef USE_TEXT
   void set_auth_key_text(text::Text *t) { this->auth_key_text_ = t; }
 #endif

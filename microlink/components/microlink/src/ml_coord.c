@@ -358,11 +358,23 @@ static int parse_pubkey_response(const char *resp, uint8_t pubkey_out[32]) {
  * hex-decode into ml->ctrl_noise_pubkey.  Returns 0 on success, -1 on any
  * failure.  Closes its own socket / destroys its own transient TLS handle. */
 static int fetch_server_pubkey(microlink_t *ml, const char *host, const char *port) {
+    /* redarc-rbus-esphome: this key is what authenticates the control server in the Noise handshake,
+     * so for Tailscale's own control plane (no login_server set) always fetch it over HTTPS with
+     * certificate validation, on 443. The Noise connection that follows may stay on port 80: it is
+     * authenticated by this key. Before, the default path fetched it over plain HTTP, so anyone on
+     * the network path could swap the key and then read the auth key and impersonate the server.
+     * A custom login_server keeps the scheme the user wrote (and warns below if it is http://). */
+    const bool default_saas = (ml->ctrl_host[0] == '\0');
+    const bool key_tls = ml->use_tls || default_saas;
+    if (default_saas) {
+        port = "443";
+    }
+
     /* ------------------------------------------------------------------ */
     /* TLS branch: use esp_tls for a short-lived, transient connection.    */
     /* The handle is local — never stored in ml.                           */
     /* ------------------------------------------------------------------ */
-    if (ml->use_tls) {
+    if (key_tls) {
         ESP_LOGI(TAG, "Fetching Noise server pubkey from https://%s:%s/key?v=%d", host, port,
                  ML_CTRL_PROTOCOL_VER);
 
@@ -450,7 +462,8 @@ static int fetch_server_pubkey(microlink_t *ml, const char *host, const char *po
     struct addrinfo *res = NULL;
     int rc = -1;
 
-    ESP_LOGI(TAG, "Fetching Noise server pubkey from http://%s:%s/key?v=%d", host, port,
+    ESP_LOGW(TAG, "Fetching the control server's Noise key over plain HTTP from http://%s:%s/key?v=%d: "
+             "anyone on the network path can replace it. Use an https:// login_server.", host, port,
              ML_CTRL_PROTOCOL_VER);
 
     if (ml_getaddrinfo(host, port, &hints, &res) != 0 || !res) {

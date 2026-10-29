@@ -234,6 +234,16 @@ void TailscaleComponent::start_microlink_() {
   }
   s_vpn_stopping.store(false);
 
+  // redarc-rbus-esphome: no key anywhere yet. Do not contact the control plane with an empty key;
+  // the status hint tells the user where to enter one, and saving a key restarts this.
+  if (!this->has_auth_key()) {
+    static const char *const NO_KEY_HINT = "No auth key yet - enter one on the ESP tab of the web page";
+    if (this->setup_status_sensor_ != nullptr && this->setup_status_sensor_->state != NO_KEY_HINT) {
+      this->setup_status_sensor_->publish_state(NO_KEY_HINT);
+    }
+    return;
+  }
+
   microlink_config_t config = {};
   const std::string &effective_key = this->auth_key_overridden_ ? this->runtime_auth_key_ : this->auth_key_;
   config.auth_key = effective_key.c_str();
@@ -650,7 +660,8 @@ void TailscaleComponent::publish_state_() {
           hint = "Connecting to control plane...";
           break;
         default:
-          hint = "Waiting for VPN...";
+          hint = this->has_auth_key() ? "Waiting for VPN..."
+                                      : "No auth key yet - enter one on the ESP tab of the web page";
           break;
       }
       if (this->setup_status_sensor_->state != hint) {

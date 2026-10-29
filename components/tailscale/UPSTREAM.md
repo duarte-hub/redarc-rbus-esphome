@@ -20,6 +20,9 @@ project is affiliated with or endorses this code.
 
 - `__init__.py`: `disable_telemetry` defaults to `true` (upstream sends anonymous usage events
   to a Cloudflare Worker unless you turn it off).
+- `__init__.py`, `tailscale.h`, `tailscale.cpp`: `auth_key` is optional. With no key in the YAML
+  or saved on the device the client does not start and the setup hint says to enter one; saving a
+  key (the `VPN Auth Key Override` text entity) starts it as before.
 - `__init__.py`: `CONFIG_ML_ENABLE_CONFIG_HTTPD` is pinned off. That optional microlink HTTP
   server has unauthenticated POST endpoints (`/api/settings`, `/api/wifi`, `/api/restart`); it is
   already off by default and never started by this wrapper, so it is not in the firmware.
@@ -31,3 +34,9 @@ project is affiliated with or endorses this code.
 
 Everything else is unmodified so a newer upstream release can be diffed and merged. Review the
 upstream changelog before updating: this code runs on the device next to your Tailscale key.
+- `microlink/components/microlink/src/ml_coord.c`, `fetch_server_pubkey()`: with no `login_server`
+  (Tailscale's own control plane) the control server's Noise public key was fetched over plain HTTP
+  on port 80. That key is what authenticates the server, so a man in the middle could substitute
+  it, read the auth key sent in the registration request and impersonate the control plane. It is
+  now fetched over HTTPS on port 443 with the built-in CA bundle. A custom `http://` login_server
+  still works but logs a warning. Worth reporting upstream.

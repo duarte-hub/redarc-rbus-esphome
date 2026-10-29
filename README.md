@@ -461,10 +461,12 @@ packages:
 ```
 
 Put the include in a subfolder: the ESPHome dashboard lists every top-level `.yaml` as a device.
-Create a Tailscale auth key (tagged, pre-approved, ephemeral, minimal ACL) and store it in
-`secrets.yaml` as `tailscale_auth_key`. The key is baked into the firmware, so anyone who can
-read the chip's flash can read it. The web page's **ESP** tab shows the VPN state and has a box
-for replacing the key without reflashing.
+Create a Tailscale auth key (tagged, pre-approved, ephemeral, minimal ACL). You do not put it
+in the YAML: after flashing, paste it into the Tailscale card on the web page's **ESP** tab (or
+the `VPN Auth Key Override` entity). It is saved on the device and survives reboots and OTA
+updates, and the same box replaces an expired key without reflashing. Until a key is entered,
+the status line reads "No auth key yet" and the client does not contact Tailscale. If you would
+rather bake a key into the firmware, set `auth_key: !secret tailscale_auth_key` under `tailscale:`.
 
 ## Partitions (ESP32-C6, 4 MB flash)
 

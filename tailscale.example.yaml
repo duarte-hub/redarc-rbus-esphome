@@ -10,9 +10,11 @@
 #   packages:
 #     tailscale: !include common/tailscale.yaml
 #
-# Needs a Tailscale auth key in secrets.yaml:  tailscale_auth_key: tskey-auth-...
-# Use a tagged, pre-approved, ephemeral key with a minimal ACL scope. The key is stored in the
-# firmware, so anyone who can read the chip's flash can read it.
+# No auth key goes in this file or in secrets.yaml. After flashing, open the web page, go to the
+# ESP tab and paste a key into the Tailscale card (or use the "VPN Auth Key Override" entity in
+# Home Assistant). It is saved on the device and survives reboots and OTA updates.
+# Use a tagged, pre-approved, ephemeral key with a minimal ACL scope. Anyone who can read the
+# chip's flash can read the key.
 # Flash is tight: see the "Partitions" notes in the README.
 
 esp32:
@@ -31,7 +33,7 @@ time:                        # the control plane needs a correct clock
       - 2.pool.ntp.org
 
 tailscale:
-  auth_key: !secret tailscale_auth_key
+  # auth_key: !secret tailscale_auth_key   # optional: bake a key into the firmware instead
   hostname: "redarc-camper"
   # disable_telemetry defaults to true in this copy
 
