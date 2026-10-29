@@ -20,6 +20,11 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
+# Built-in web UI at http://redarc-battery.local/ (shows every entity below,
+# including the Pair Now button and the signal strengths).
+web_server:
+  port: 80
+
 # Pull this component straight from GitHub.
 external_components:
   - source:
@@ -39,12 +44,19 @@ ble_client:
     id: redarc_display
 
 sensor:
+  # WiFi signal strength of the ESP itself.
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 10s
   - platform: redarc_rbus
     id: redarc_hub
     ble_client_id: redarc_display
     passkey: 123456            # <-- the 6-digit code on Settings -> Bluetooth (no leading zero issues: it's an int)
     status_led: GPIO2
     # Link diagnostics (counts since boot)
+    rssi:
+      name: "BLE RSSI"          # ESP <-> Display link
+    rssi_update_interval: 10s
     disconnects:
       name: "BLE Disconnects"
     pairing_requests:
@@ -207,6 +219,11 @@ select:
       name: "DC Input Trigger"
 
 button:
+  # Opens a 60 s pairing window; the Display then shows a code (see README, "Pair Now").
+  - platform: template
+    name: "REDARC Pair Now"
+    on_press:
+      - lambda: "id(redarc_hub).pair_now();"
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub
     sync_soc_full:
