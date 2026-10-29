@@ -442,3 +442,45 @@ sensor:
 Both read as unknown until the ESP has joined a network. They are not exposed back over Zigbee
 (Zigbee2MQTT already shows `linkquality`). The web page shows a Zigbee signal row in its menu
 when a sensor named like "Zigbee Signal" exists.
+
+## Tailscale (optional)
+
+`components/tailscale` lets the ESP join your tailnet as its own node (its own `100.x` address),
+so the web page and API are reachable from anywhere. It is a copy of the community project
+[esphome-tailscale](https://github.com/Csontikka/esphome-tailscale) (MIT) with its bundled
+libraries in `microlink/`; see `components/tailscale/UPSTREAM.md` for the source commit, the one
+change made here (telemetry is off by default) and the licenses.
+
+```yaml
+external_components:
+  - source: github://duarte-hub/redarc-rbus-esphome@main
+    components: [redarc_rbus, zigbee_link, tailscale]
+
+packages:
+  tailscale: !include common/tailscale.yaml   # copy tailscale.example.yaml there
+```
+
+Put the include in a subfolder: the ESPHome dashboard lists every top-level `.yaml` as a device.
+Create a Tailscale auth key (tagged, pre-approved, ephemeral, minimal ACL) and store it in
+`secrets.yaml` as `tailscale_auth_key`. The key is baked into the firmware, so anyone who can
+read the chip's flash can read it. The web page's **ESP** tab shows the VPN state and has a box
+for replacing the key without reflashing.
+
+## Partitions (ESP32-C6, 4 MB flash)
+
+Zigbee needs a `zb_fct` partition and Tailscale needs a lot of flash, which ESPHome's default
+table (two 1.75 MB app slots, 448 KB NVS) does not leave. Use a custom table next to your
+device yaml (`esp32: partitions: partitions.csv`):
+
+```
+otadata,  data, ota,     0x9000,   0x2000,
+phy_init, data, phy,     0xB000,   0x1000,
+zb_fct,   data, fat,     0xC000,   0x1000,
+app0,     app,  ota_0,   0x10000,  0x1F0000,
+app1,     app,  ota_1,   0x200000, 0x1F0000,
+nvs,      data, nvs,     0x3F0000, 0x10000,
+```
+
+That gives two 1.94 MB app slots with 64 KB of NVS. A partition table is only written by a full
+(USB) flash, never by OTA, and moving NVS loses the Bluetooth bond and the Zigbee join. Do not
+use web.esphome.io for repeated flashes: it erases the whole flash every time.

@@ -34,6 +34,8 @@ ZIGBEE_EXPOSE = [
 # Entity kinds that are always exposed whatever their name (the control switches).
 EXPOSE_ALL = {"validate_switch_esp32"}
 
+# Never on Zigbee, even if they are switches (the Tailscale VPN toggle and friends).
+_NEVER = re.compile(r"(^|\s)vpn\b", re.IGNORECASE)
 _PATTERNS = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE]
 _installed = False
 
@@ -45,8 +47,10 @@ def _wrap(zigbee, fn_name):
         return
 
     def filtered(config, *args, **kwargs):
+        name = config.get(CONF_NAME) or ""
+        if _NEVER.search(name):
+            return config
         if fn_name not in EXPOSE_ALL:
-            name = config.get(CONF_NAME) or ""
             if not any(p.search(name) for p in _PATTERNS):
                 return config  # not registered with Zigbee; still a normal ESPHome entity
         return original(config, *args, **kwargs)

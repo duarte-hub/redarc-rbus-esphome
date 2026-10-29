@@ -15,7 +15,8 @@
     home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
     grid: 'M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h8v8h-8v-8zm2 2v4h4v-4h-4z',
     chart: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z',
-    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z'
   };
   function mi(name, size, cls) {
     return '<svg class="' + (cls || '') + '" width="' + size + '" height="' + size +
@@ -36,7 +37,10 @@
   var ents = {};           // "domain/name" -> {domain, name, short, state, value}
   var prefix = null;       // "TVMS 1 " (everything before "Battery SoC")
   var opts = {};           // select name -> [options]
-  var tab = ({ '#controls': 'controls', '#charts': 'charts' })[location.hash] || 'home';
+  function tabFromHash() {
+    return ({ '#controls': 'controls', '#charts': 'charts', '#config': 'config' })[location.hash] || 'home';
+  }
+  var tab = tabFromHash();
   var drawer = false;
   var chart = { metric: 'soc', per: 'hour' };
   var toast = '', toastT = 0;
@@ -108,7 +112,7 @@
       return '<button class="nb' + (tab === id ? ' act' : '') + '" data-act="tab" data-n="' + id + '">' +
         mi(icon, 28) + (tab === id ? '<span>' + label + '</span>' : '') + '</button>';
     }
-    return '<nav class="nav">' + b('home', 'home', 'Home') + b('controls', 'grid', 'Controls') + b('charts', 'chart', 'Charts') + '</nav>';
+    return '<nav class="nav">' + b('home', 'home', 'Home') + b('controls', 'grid', 'Controls') + b('charts', 'chart', 'Charts') + b('config', 'gear', 'ESP') + '</nav>';
   }
 
   function battery(soc) {
@@ -248,7 +252,7 @@
     var h = '<div class="grid">';
     for (var k in ents) {
       var e = ents[k];
-      if (e.domain !== 'switch' || /master|main power/i.test(e.short)) continue;
+      if (e.domain !== 'switch' || /master|main power|^vpn /i.test(e.short)) continue;
       var onn = e.value === true || e.state === 'ON', ico = iconFor(e.short);
       var letter = ico === 'light' ? '<i class="ltr">' + esc(e.short.charAt(0).toUpperCase()) + '</i>' : '';
       h += '<button class="tile' + (onn ? ' on' : '') + '" data-act="sw" data-n="' + esc(e.name) + '"><span class="ico">' +
@@ -327,12 +331,71 @@
       (on(/pairing required/i) ? '<p class="warn">The Display has not bonded with this unit yet.</p>' : '') +
       '<p class="mut">1. Open <i>Settings → Bluetooth</i> on the Display.<br>2. Tap Pair Now.<br>3. Enter the 6-digit code the Display shows.</p>' +
       (code ? '<div class="srow"><span>Pairing code</span><input id="code" inputmode="numeric" maxlength="6" placeholder="000000" value="' +
-        (code.value ? p6(code.value) : '') + '"><button class="sm" data-act="code" data-n="' + esc(code.name) + '">Set</button></div>' : '') +
+        (Number(code.value) > 0 ? p6(code.value) : '') + '"><button class="sm" data-act="code" data-n="' + esc(code.name) + '">Set</button></div>' : '') +
       '<div class="pbtn"><button class="big-btn" data-act="pair">Pair Now</button>' +
       '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button></div>' +
       '<p class="mut zbn">Zigbee Pair makes the ESP leave its current Zigbee network and search for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p></aside>';
   }
-  var zbArm = false, zbT = 0;
+  var zbArm = false, zbT = 0, rsArm = false, rsT = 0;
+
+  /* ------------------------------------------------------------- ESP config */
+  function fmtUp(s) {
+    if (s === null) return '--';
+    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + m + 'm';
+  }
+  function crow(label, val) { return '<div class="srow"><span>' + esc(label) + '</span><b>' + esc(val) + '</b></div>'; }
+  function cardc(title, inner) { return '<section class="card cfg"><div class="ds">' + title + '</div>' + inner + '</section>'; }
+  // One row per entity that exists: label, name pattern, domain.
+  function crows(list) {
+    var h = '';
+    list.forEach(function (r) {
+      var e = find(r[1], r[2]);
+      if (e) h += crow(r[0], e.state === undefined || e.state === '' ? '--' : e.state);
+    });
+    return h;
+  }
+  function cfg() {
+    var h = cardc('Device',
+      crow('Address', location.host) + crow('Uptime', fmtUp(num(/^(esp )?uptime$/i))) +
+      crows([['Wi-Fi signal', /wifi (signal|rssi)/i, 'sensor']]) +
+      '<button class="big-btn rs' + (rsArm ? ' arm' : '') + '" data-act="restart">' + (rsArm ? 'Tap again to restart' : 'Restart ESP') + '</button>');
+
+    var disp = crows([
+      ['Link', /link status/i, 'text_sensor'], ['Bluetooth signal', /ble (signal|rssi)/i, 'sensor'],
+      ['Disconnects', /ble disconnects/i, 'sensor'], ['Last disconnect', /last disconnect/i, 'text_sensor'],
+      ['Last pairing', /last pairing/i, 'text_sensor'], ['Pairing requests', /pairing requests/i, 'sensor'],
+      ['Pairing required', /pairing required/i, 'binary_sensor']]);
+    h += cardc('Display (Bluetooth)', disp + '<button class="big-btn" data-act="pair">Pair Now</button>' +
+      '<p class="mut zbn">Open <i>Settings → Bluetooth</i> on the Display first, then enter the code it shows in the menu.</p>');
+
+    var zb = crows([['Signal', /zigbee (signal|rssi)/i, 'sensor'], ['Link quality', /zigbee lqi/i, 'sensor']]);
+    if (zb) {
+      h += cardc('Zigbee', zb + '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button>' +
+        '<p class="mut zbn">Leaves the current Zigbee network and searches for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p>');
+    }
+
+    var vpn = find(/^vpn connected$/i, 'binary_sensor');
+    if (vpn) {
+      var base = vpn.name.replace(/connected$/i, '');
+      var en = find(/^vpn enabled$/i, 'switch'), key = find(/^vpn auth key override$/i, 'text');
+      h += cardc('Tailscale', crows([
+        ['Connected', /^vpn connected$/i, 'binary_sensor'], ['Address', /^vpn ip$/i, 'text_sensor'],
+        ['Hostname', /^vpn hostname$/i, 'text_sensor'], ['Peers', /^vpn peer status$/i, 'text_sensor'],
+        ['Network', /^vpn network$/i, 'text_sensor'], ['Status', /^vpn setup hint$/i, 'text_sensor'],
+        ['Key source', /^vpn auth key source$/i, 'text_sensor']]) +
+        (en ? '<div class="srow"><span>Enabled</span><button class="sm" data-act="sw" data-n="' + esc(en.name) + '">' +
+          (en.value === true || en.state === 'ON' ? 'On' : 'Off') + '</button></div>' : '') +
+        '<button class="big-btn" data-act="btn" data-n="' + esc(base + 'Reconnect') + '">Reconnect</button>' +
+        (key ? '<div class="srow keyrow"><input id="vpnkey" type="password" autocomplete="off" placeholder="New auth key (tskey-auth-…)">' +
+          '<button class="sm" data-act="vpnkey" data-n="' + esc(key.name) + '">Set</button></div>' : ''));
+    }
+
+    var all = Object.keys(ents).sort().map(function (k) {
+      var e = ents[k]; return crow(e.domain + ' · ' + e.name, e.state === undefined ? '--' : e.state);
+    }).join('');
+    return h + '<section class="card cfg"><details><summary>All entities (' + Object.keys(ents).length + ')</summary>' + all + '</details></section>';
+  }
   function p6(n) { n = String(Math.round(n)); return ('000000' + n).slice(-6); }
 
   /* --------------------------------------------------------------- render */
@@ -340,13 +403,13 @@
   function schedule() { if (!pend) pend = requestAnimationFrame(render); }
   function render() {
     pend = 0;
-    var body = tab === 'home' ? home() : tab === 'controls' ? controls() : charts();
+    var body = tab === 'home' ? home() : tab === 'controls' ? controls() : tab === 'config' ? cfg() : charts();
     var html = header() + '<main class="' + tab + '">' + body + '</main>' + nav() + (drawer ? side() : '') +
       (toast ? '<div class="toast">' + esc(toast) + '</div>' : '');
     if (html === last) return;
     var sc = root.querySelector('main') && !fresh ? root.querySelector('main').scrollTop : 0, ae = document.activeElement;
     fresh = false;
-    if (ae && (ae.tagName === 'SELECT' || ae.id === 'code')) return;   // do not yank an open control
+    if (ae && (ae.tagName === 'SELECT' || ae.tagName === 'INPUT')) return;   // do not yank an open control
     last = html;
     root.innerHTML = html;
     var m = root.querySelector('main');
@@ -365,6 +428,26 @@
       var pn = (prefix || '') + 'Pair Now';
       post('button', pn, 'press').then(function () { say('Pairing window open for 60 s. Enter the code shown on the Display.'); })
         .catch(function () { say('Could not reach the unit.'); });
+    } else if (a === 'restart') {
+      if (!rsArm) {
+        rsArm = true; clearTimeout(rsT);
+        rsT = setTimeout(function () { rsArm = false; last = ''; schedule(); }, 5000);
+      } else {
+        rsArm = false; clearTimeout(rsT);
+        post('button', (prefix || '') + 'Restart', 'press')
+          .then(function (r) { say(r.ok ? 'Restarting. This page reconnects in about a minute.' : 'This firmware has no Restart button.'); })
+          .catch(function () { say('Could not reach the unit.'); });
+      }
+    } else if (a === 'btn') {
+      post('button', n, 'press').then(function (r) { say(r.ok ? 'Done.' : 'That button does not exist on this firmware.'); })
+        .catch(function () { say('Could not reach the unit.'); });
+    } else if (a === 'vpnkey') {
+      var kel = document.getElementById('vpnkey'), kv = kel && kel.value.trim();
+      if (kv) {
+        post('text', n, 'set', '?value=' + encodeURIComponent(kv))
+          .then(function (r) { kel.value = ''; say(r.ok ? 'Auth key sent. The VPN reconnects now.' : 'Could not set the auth key.'); })
+          .catch(function () { say('Could not reach the unit.'); });
+      }
     } else if (a === 'zigbee') {
       if (!zbArm) {
         zbArm = true; clearTimeout(zbT);
@@ -389,8 +472,12 @@
     t.blur(); last = ''; schedule();
   });
 
+  // The code box is limited to 6 digits: select what is in it so typing replaces it.
+  document.addEventListener('focusin', function (ev) {
+    if (ev.target.id === 'code') ev.target.select();
+  });
   window.addEventListener('hashchange', function () {
-    var t = ({ '#controls': 'controls', '#charts': 'charts' })[location.hash] || 'home';
+    var t = tabFromHash();
     if (t !== tab) { tab = t; fresh = true; last = ''; schedule(); }
   });
 
@@ -428,11 +515,14 @@
     '.cap{display:flex;justify-content:space-between;padding:26px 8px 18px}.mut{color:var(--mut);font-size:16px}.ts{font-size:30px;font-weight:600;margin-top:4px}.ts small{font-size:18px;font-weight:400;color:var(--mut)}.r{text-align:right}' +
     '.chart{width:100%;display:block}.tk0{fill:rgba(255,255,255,.07)}.bar0{fill:var(--g)}.ax{fill:var(--mut);font-size:11px}.gl{stroke:rgba(255,255,255,.2);stroke-width:1}.nod{text-align:center;margin-top:30vh;font-size:20px}' +
     '.nav{display:flex;justify-content:space-around;align-items:center;height:96px;padding:0 10px 14px;background:var(--bar);border-top:1px solid rgba(255,255,255,.12);flex:none}' +
-    '.nb{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border-radius:26px;font-size:22px;font-weight:600}.nb.act{background:rgba(139,195,74,.2);color:var(--g)}' +
+    '.nb{display:flex;align-items:center;gap:8px;height:52px;padding:0 16px;border-radius:26px;font-size:20px;font-weight:600}.nb.act{background:rgba(139,195,74,.2);color:var(--g)}' +
     '.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:5}.drawer{position:absolute;top:0;bottom:0;left:0;width:86%;max-width:380px;background:var(--bar);z-index:6;padding:16px 20px;overflow-y:auto;box-shadow:4px 0 16px rgba(0,0,0,.5)}' +
     '.dh{display:flex;align-items:center;justify-content:space-between;font-size:22px;margin-bottom:6px}.ds{margin:22px 0 8px;color:var(--g);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.8px}' +
     '.srow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--ln)}.sv2{display:inline-flex;align-items:center;gap:8px}.sv2 em{font-style:normal;color:var(--mut);font-size:14px}' +
     '.drawer input{width:110px;background:#303030;border:1px solid #616161;border-radius:8px;padding:8px 10px;font-size:18px;letter-spacing:2px;text-align:center}' +
+    '.cfg{padding:6px 18px 18px}.cfg .ds{margin:12px 0 4px}.cfg .srow b{max-width:62%;text-align:right;word-break:break-word;font-weight:500}.cfg .big-btn{margin-top:14px}' +
+    '.cfg .zb{background:transparent;color:var(--g);border:2px solid var(--g)}.cfg .zb.arm,.big-btn.rs.arm{background:#EF5350;border-color:#EF5350;color:#fff}.big-btn.rs{background:transparent;color:#EF5350;border:2px solid #EF5350}' +
+    '.cfg input{flex:1;min-width:0;width:auto;letter-spacing:0;text-align:left;font-size:16px}.cfg summary{cursor:pointer;color:var(--g);padding:10px 0}.cfg details .srow{font-size:14px}' +
     '.pbtn{display:flex;gap:10px;margin-top:18px}.pbtn .big-btn{margin-top:0;flex:1;width:auto;padding:15px 6px;font-size:18px}.pbtn .zb{background:transparent;color:var(--g);border:2px solid var(--g)}.pbtn .zb.arm{background:#EF5350;border-color:#EF5350;color:#fff}.zbn{font-size:13px;margin-top:12px}' +
     '.sm{background:var(--g);color:#000;border-radius:18px;padding:8px 16px;font-weight:600}.big-btn{width:100%;margin-top:18px;background:var(--g);color:#000;border-radius:28px;padding:15px;font-size:20px;font-weight:600}.warn{color:#EF5350}' +
     '.toast{position:absolute;left:16px;right:16px;bottom:110px;background:#E0E0E0;color:#212121;border-radius:10px;padding:14px 16px;z-index:9;box-shadow:var(--sh)}';

@@ -1,0 +1,74 @@
+# Tailscale for the RedVision ESP (ESP32-C6, no PSRAM). The client is part of this repository
+# (components/tailscale, see components/tailscale/UPSTREAM.md). Put this next to your device
+# yaml as common/tailscale.yaml (a subfolder keeps the ESPHome dashboard from listing it as a
+# device) and add to the device yaml:
+#
+#   external_components:
+#     - source: github://duarte-hub/redarc-rbus-esphome@main
+#       components: [redarc_rbus, zigbee_link, tailscale]
+#
+#   packages:
+#     tailscale: !include common/tailscale.yaml
+#
+# Needs a Tailscale auth key in secrets.yaml:  tailscale_auth_key: tskey-auth-...
+# Use a tagged, pre-approved, ephemeral key with a minimal ACL scope. The key is stored in the
+# firmware, so anyone who can read the chip's flash can read it.
+# Flash is tight: see the "Partitions" notes in the README.
+
+esp32:
+  framework:
+    sdkconfig_options:       # as required by the tailscale component
+      CONFIG_LWIP_TCPIP_TASK_STACK_SIZE: "6144"
+      CONFIG_LWIP_CHECK_THREAD_SAFETY: y
+      CONFIG_LWIP_TCPIP_CORE_LOCKING: n
+
+time:                        # the control plane needs a correct clock
+  - platform: sntp
+    id: tailscale_time
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
+
+tailscale:
+  auth_key: !secret tailscale_auth_key
+  hostname: "redarc-camper"
+  # disable_telemetry defaults to true in this copy
+
+# Only the entities the web page's ESP tab uses.
+binary_sensor:
+  - platform: tailscale
+    connected:
+      name: "VPN Connected"
+
+text_sensor:
+  - platform: tailscale
+    ip_address:
+      name: "VPN IP"
+    vpn_hostname:
+      name: "VPN Hostname"
+    peer_status:
+      name: "VPN Peer Status"
+    setup_status:
+      name: "VPN Setup Hint"
+    auth_key_status:
+      name: "VPN Auth Key Source"
+
+switch:
+  - platform: tailscale
+    vpn_enabled:
+      name: "VPN Enabled"
+
+text:
+  - platform: tailscale
+    auth_key:
+      name: "VPN Auth Key Override"
+      mode: password
+
+button:
+  - platform: tailscale
+    reconnect:
+      name: "VPN Reconnect"
+  # Used by the web page's "Restart ESP" button.
+  - platform: restart
+    name: "TVMS 1 Restart"

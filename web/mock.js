@@ -15,6 +15,12 @@
     ['text_sensor', 'Battery Time Remaining (Text)', '28 days to flat'],
     ['text_sensor', 'SoC Hourly Log', '88,88,89,89,89,89,89,89,89,89,90,90,90,90,90,90,90,90,90,91,91,91,91,91,91,91,91,91'],
     ['text_sensor', 'Solar Hourly Log', '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0'],
+    ['sensor', 'ESP Uptime', 8123], ['sensor', 'Zigbee LQI', 198], ['sensor', 'BLE Disconnects', 2],
+    ['text_sensor', 'BLE Last Disconnect', '41m ago'], ['text_sensor', 'BLE Last Pairing', 'never'],
+    ['binary_sensor', 'VPN Connected', true], ['text_sensor', 'VPN IP', '100.101.102.103'],
+    ['text_sensor', 'VPN Hostname', 'redarc-camper'], ['text_sensor', 'VPN Peer Status', '3 online, 2 direct'],
+    ['text_sensor', 'VPN Setup Hint', 'Connected'], ['text_sensor', 'VPN Auth Key Source', 'Firmware'],
+    ['switch', 'VPN Enabled', true], ['text', 'VPN Auth Key Override', ''],
     ['select', 'Charging Mode', 'Touring Mode'],
     ['number', 'Pairing Code', 123456]
   ];
