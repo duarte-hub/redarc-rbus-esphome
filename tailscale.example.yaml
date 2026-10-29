@@ -26,6 +26,8 @@ esp32:
       CONFIG_LWIP_TCPIP_TASK_STACK_SIZE: "6144"
       CONFIG_LWIP_CHECK_THREAD_SAFETY: y
       CONFIG_LWIP_TCPIP_CORE_LOCKING: n
+      CONFIG_ESP_ERR_TO_NAME_LOOKUP: n   # flash: error codes are logged as numbers, not names
+      CONFIG_MBEDTLS_ERROR_STRINGS: n    # flash: same for mbedTLS error text
 
 time:                        # the control plane needs a correct clock
   - platform: sntp
