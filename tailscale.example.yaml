@@ -19,6 +19,9 @@
 
 esp32:
   framework:
+    advanced:                # flash savers: Zigbee + Tailscale + BLE only just fit in 4MB
+      assertion_level: SILENT      # keep the checks, drop the assert message text
+      enable_lwip_assert: false
     sdkconfig_options:       # as required by the tailscale component
       CONFIG_LWIP_TCPIP_TASK_STACK_SIZE: "6144"
       CONFIG_LWIP_CHECK_THREAD_SAFETY: y

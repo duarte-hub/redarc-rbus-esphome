@@ -182,10 +182,9 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_LOG_MAXIMUM_LEVEL_ERROR", False)
     add_idf_sdkconfig_option("CONFIG_LOG_MAXIMUM_LEVEL_WARN", True)
 
-    # Enable per-tag runtime log level control (esp_log_level_set)
-    # ESPHome defaults to CONFIG_LOG_TAG_LEVEL_IMPL_NONE which makes it a no-op
-    add_idf_sdkconfig_option("CONFIG_LOG_TAG_LEVEL_IMPL_NONE", False)
-    add_idf_sdkconfig_option("CONFIG_LOG_TAG_LEVEL_IMPL_LINKED_LIST", True)
+    # redarc-rbus-esphome: no per-tag runtime log level table (upstream enables it for the VPN Debug
+    # Log switch, which only adds warnings at the WARN compile-time level anyway); ESPHome's
+    # default CONFIG_LOG_TAG_LEVEL_IMPL_NONE makes esp_log_level_set() a no-op.
 
     # Add microlink include paths. On older ESPHome (and the arduino path)
     # these -I flags let the headers resolve directly; on the 2026.7+ esp-idf
