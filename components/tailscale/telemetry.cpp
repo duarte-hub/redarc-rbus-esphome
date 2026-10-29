@@ -3,6 +3,8 @@
 
 #include "telemetry.h"
 
+#ifdef USE_TAILSCALE_TELEMETRY  /* redarc-rbus-esphome: compiled out by default */
+
 #include <cstring>
 #include <cstdio>
 #include <cinttypes>
@@ -247,3 +249,5 @@ void telemetry_set_connected(bool connected) {
 
 }  // namespace tailscale
 }  // namespace esphome
+
+#endif  /* USE_TAILSCALE_TELEMETRY */

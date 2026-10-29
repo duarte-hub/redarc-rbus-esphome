@@ -110,10 +110,11 @@ async def to_code(config):
 
     cg.add(var.set_telemetry_disabled(config[CONF_DISABLE_TELEMETRY]))
     cg.add(var.set_ipn_version(config[CONF_IPN_VERSION]))
-    # Telemetry POSTs over HTTPS via ESP-IDF's esp_http_client, which ESPHome
-    # excludes by default to save compile time — re-enable it. (TLS uses the
-    # mbedtls certificate bundle already enabled below.)
-    include_builtin_idf_component("esp_http_client")
+    # redarc-rbus-esphome: the telemetry sender (and the esp_http_client it needs, ~tens of KB of
+    # flash) is only compiled in when `disable_telemetry: false` is set.
+    if not config[CONF_DISABLE_TELEMETRY]:
+        cg.add_define("USE_TAILSCALE_TELEMETRY")
+        include_builtin_idf_component("esp_http_client")
 
     # microlink sizes the static `ml_peer_t peers[ML_MAX_PEERS]` array at compile
     # time from CONFIG_ML_MAX_PEERS (default 16), and microlink_init() clamps the
@@ -156,7 +157,10 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_LWIP_CHECK_THREAD_SAFETY", False)
     add_idf_sdkconfig_option("CONFIG_LWIP_MAX_SOCKETS", 24)
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE", True)
-    add_idf_sdkconfig_option("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL", True)
+    # redarc-rbus-esphome: the common-roots bundle (Let's Encrypt, DigiCert, ...) instead of every
+    # root: roughly 100 KB less flash. Tailscale's control and DERP servers use Let's Encrypt.
+    add_idf_sdkconfig_option("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL", False)
+    add_idf_sdkconfig_option("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN", True)
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_CHACHAPOLY_C", True)
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_CHACHA20_C", True)
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_POLY1305_C", True)
@@ -165,8 +169,10 @@ async def to_code(config):
     # ESPHome defaults CONFIG_LOG_MAXIMUM_LEVEL to ERROR (1), which compiles
     # out all ESP_LOGI/ESP_LOGW calls at the preprocessor level. Raise to INFO
     # so the runtime debug log switch can enable microlink logs via esp_log_level_set().
+    # redarc-rbus-esphome: WARN, not INFO. Every ESP_LOGI string in the bundled libraries is
+    # otherwise kept in flash; the "VPN Debug Log" switch therefore only adds warnings.
     add_idf_sdkconfig_option("CONFIG_LOG_MAXIMUM_LEVEL_ERROR", False)
-    add_idf_sdkconfig_option("CONFIG_LOG_MAXIMUM_LEVEL_INFO", True)
+    add_idf_sdkconfig_option("CONFIG_LOG_MAXIMUM_LEVEL_WARN", True)
 
     # Enable per-tag runtime log level control (esp_log_level_set)
     # ESPHome defaults to CONFIG_LOG_TAG_LEVEL_IMPL_NONE which makes it a no-op

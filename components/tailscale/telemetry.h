@@ -42,6 +42,8 @@
  */
 #pragma once
 
+#include "esphome/core/defines.h"  /* USE_TAILSCALE_TELEMETRY */
+
 namespace esphome {
 namespace tailscale {
 
@@ -54,10 +56,16 @@ namespace tailscale {
  * Increments the persistent boot counter and reads any pending crash summary
  * synchronously, then spawns the (PSRAM-stacked) sender task. Call once the
  * network is up. */
+#ifdef USE_TAILSCALE_TELEMETRY
 void telemetry_init(bool enabled);
 
 /* Keep the reported tailnet-connection bool current (read at send time). */
 void telemetry_set_connected(bool connected);
+#else
+/* redarc-rbus-esphome: telemetry is compiled out unless `disable_telemetry: false` is set. */
+inline void telemetry_init(bool) {}
+inline void telemetry_set_connected(bool) {}
+#endif
 
 }  // namespace tailscale
 }  // namespace esphome
