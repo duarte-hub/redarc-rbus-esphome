@@ -364,3 +364,57 @@ by REDARC's installer app, so they are exposed read-only.
 For personal interoperability with your own equipment. "REDARC" and "RedVision"
 are trademarks of REDARC Electronics; this project is not affiliated with or
 endorsed by REDARC. No REDARC firmware or app binaries are redistributed here.
+
+## RedVision-style web page (optional)
+
+`web/` holds a replacement for ESPHome's built-in web page that looks like the RedVision phone
+app (Home, Controls and Charts tabs, plus a menu with Pair Now and the Wi-Fi / Bluetooth signal
+strength). It reads live values from the node's `/events` stream, so it needs no extra firmware
+code, and entities that are not in your config are simply left out.
+
+The page uses the app's own icons. Those are REDARC's artwork, so they are not in this repo:
+extract `assets/flutter_assets/assets/` from an APK you have, then
+
+```
+python3 web/build.py path/to/assets/flutter_assets/assets   # writes web/redarc_ui.js
+```
+
+Copy `redarc_ui.js` next to your device yaml and point the web server at it:
+
+```yaml
+web_server:
+  port: 80
+  version: 2
+  js_include: redarc_ui.js
+  js_url: ""
+```
+
+To preview without a device, run `python3 -m http.server` in `web/` and open `dev.html`
+(`mock.js` fakes the node).
+
+## Zigbee (optional, ESP32-C6/H2)
+
+ESPHome's `zigbee:` component can expose the node to Zigbee2MQTT or ZHA as an end device next to
+Wi-Fi. By default it exposes *every* named sensor, binary sensor, switch and number, and the only
+ESPHome opt-out (`internal: true`) also hides the entity from Home Assistant. This component ships
+a small filter (`zigbee_filter.py`, applied automatically when `zigbee:` is in the config) that
+leaves entities as normal ESPHome entities but only puts a short list on Zigbee: battery SoC,
+voltage, current, power, temperature, time remaining, solar power, tank levels, fault active,
+the Wi-Fi / BLE signal sensors, and all switches. Edit `ZIGBEE_EXPOSE` in that file to change it.
+
+```yaml
+zigbee:
+  router: false          # end device; a router next to Wi-Fi makes the Zigbee network unstable
+
+button:
+  - platform: template
+    name: "Zigbee Pair"
+    on_press:
+      - zigbee.factory_reset   # leave the current network and search for a new one
+```
+
+Turn on *permit join* in Zigbee2MQTT / ZHA, then press the button (or **Zigbee Pair** in the web
+page menu). After any change to the entity list, remove the device in Zigbee2MQTT / ZHA and
+pair it again. The ESP32-C6 shares one radio between Wi-Fi, Bluetooth and Zigbee, so watch the
+Display link after enabling it; ESPHome's docs note C6 boards that only work close to the
+coordinator.

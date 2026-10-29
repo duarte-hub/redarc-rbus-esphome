@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .esphome/
 secrets.yaml
+
+# built from the RedVision app icons (REDARC artwork): generate locally with web/build.py
+web/redarc_ui.js

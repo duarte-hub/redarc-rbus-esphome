@@ -12,7 +12,12 @@ reconnects silently using the stored bond.
 import esphome.codegen as cg
 from esphome.components import ble_client
 
+from . import zigbee_filter
+
 CODEOWNERS = ["@duarte-hub"]
+
+# Only matters when `zigbee:` is configured: limits what goes over Zigbee (see zigbee_filter.py).
+zigbee_filter.install()
 
 redarc_rbus_ns = cg.esphome_ns.namespace("redarc_rbus")
 RedarcRbus = redarc_rbus_ns.class_("RedarcRbus", cg.Component, ble_client.BLEClientNode)
