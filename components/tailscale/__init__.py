@@ -9,6 +9,9 @@ from esphome.components.esp32 import (
     add_idf_component,
     add_idf_sdkconfig_option,
     include_builtin_idf_component,
+    request_http_client,
+    request_tls,
+    require_certificate_bundle,
 )
 from esphome.components import binary_sensor, text_sensor, sensor
 
@@ -114,7 +117,12 @@ async def to_code(config):
     # flash) is only compiled in when `disable_telemetry: false` is set.
     if not config[CONF_DISABLE_TELEMETRY]:
         cg.add_define("USE_TAILSCALE_TELEMETRY")
-        include_builtin_idf_component("esp_http_client")
+        request_http_client()
+    # The client talks TLS itself (esp-tls for the control server and the key fetch, mbedTLS for
+    # DERP) and verifies certificates against the bundle. ESPHome compiles the mbedTLS TLS stack
+    # out unless something asks for it; the telemetry HTTP client used to do that by accident.
+    request_tls()
+    require_certificate_bundle()
 
     # microlink sizes the static `ml_peer_t peers[ML_MAX_PEERS]` array at compile
     # time from CONFIG_ML_MAX_PEERS (default 16), and microlink_init() clamps the
