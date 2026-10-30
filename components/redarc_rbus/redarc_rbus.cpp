@@ -272,12 +272,12 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
         this->set_pairing_required_(true);
         this->set_link_status_("Pairing required: enter the code on the Display");
       }
-      // The Display picks a new random code for every pairing attempt and gives up after
-      // ~7 s, so a code typed earlier can never match. Always wait for the code the Display
+      // The Display picks a new random code for every pairing attempt, so a code typed
+      // earlier can never match. (How long it waits for the answer is not measured yet.) Always wait for the code the Display
       // is showing now; set_passkey() answers as soon as it is entered.
       this->passkey_pending_ = true;
       ESP_LOGW(TAG, "Display is requesting pairing. Enter the 6-digit code it is showing "
-                    "NOW into 'REDARC Pairing Code' (the Display gives up after ~7 s).");
+                    "NOW into 'REDARC Pairing Code'.");
       break;
     }
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
@@ -431,9 +431,29 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->have_handles_ = true;
       ESP_LOGD(TAG, "Found 8001=0x%04x (notify) 8002=0x%04x (write)", this->notify_handle_,
                this->write_handle_);
-      if (!this->esp_has_bond_())
-        esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+      if (!this->esp_has_bond_()) {
+        // Pair the way the app does: try the protected CCCD write unsecured. The Display
+        // answers Insufficient Authentication and that starts pairing (see WRITE_DESCR_EVT).
+        auto *probe = this->parent()->get_config_descriptor(this->notify_handle_);
+        if (probe != nullptr) {
+          uint8_t off[2] = {0x00, 0x00};
+          ESP_LOGD(TAG, "Probing protected CCCD 0x%04x to trigger pairing", probe->handle);
+          esp_ble_gattc_write_char_descr(gattc_if, this->parent()->get_conn_id(), probe->handle,
+                                         sizeof(off), off, ESP_GATT_WRITE_TYPE_RSP,
+                                         ESP_GATT_AUTH_REQ_NONE);
+        } else {
+          esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+        }
+      }
       this->start_notify_();  // runs only once we are also bonded
+      break;
+    }
+    case ESP_GATTC_WRITE_DESCR_EVT: {
+      const int st = param->write.status;
+      if (!this->bonded_ && (st == ESP_GATT_INSUF_AUTHENTICATION || st == ESP_GATT_INSUF_ENCRYPTION)) {
+        ESP_LOGI(TAG, "Display refused unsecured write (status 0x%02x); starting pairing", st);
+        esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+      }
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {

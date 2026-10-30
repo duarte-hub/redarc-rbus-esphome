@@ -151,8 +151,7 @@ of sending a stale one. Reliable sequence:
 3. Read the code the Display shows **now** and type it into **REDARC Pairing
    Code** in HA. The component answers immediately → `Bonded with Display`.
 
-(If you instead enter the code first and press Pair Now within ~25 s, that also
-works — the component treats a just-entered code as fresh and answers at once.)
+(The Display picks a new code for each attempt, so a code entered before the Display asks can never match.)
 Once bonded, the keys are stored and you're set until the next full erase.
 
 ## Configuration reference
