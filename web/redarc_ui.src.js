@@ -331,7 +331,7 @@
       (on(/pairing required/i) ? '<p class="warn">The Display has not bonded with this unit yet.</p>' : '') +
       '<p class="mut">1. Open <i>Settings → Bluetooth</i> on the Display.<br>2. Tap Pair Now.<br>3. Enter the 6-digit code the Display shows.</p>' +
       (code ? '<div class="srow"><span>Pairing code</span><input id="code" inputmode="numeric" maxlength="6" placeholder="000000" value="' +
-        (Number(code.value) > 0 ? p6(code.value) : '') + '"><button class="sm" data-act="code" data-n="' + esc(code.name) + '">Set</button></div>' : '') +
+        codeVal + '"><button class="sm" data-act="code" data-n="' + esc(code.name) + '">Set</button></div>' : '') +
       '<div class="pbtn"><button class="big-btn" data-act="pair">Pair Now</button>' +
       '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button></div>' +
       '<p class="mut zbn">Zigbee Pair makes the ESP leave its current Zigbee network and search for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p></aside>';
@@ -400,6 +400,20 @@
 
   /* --------------------------------------------------------------- render */
   var last = '', pend = 0, root, fresh = false;
+  // Digits typed into the pairing box live here, so a re-render (which replaces the input when
+  // it loses focus on the Set tap) cannot wipe them before they are sent.
+  var codeVal = '';
+  function sendCode() {
+    var c = find(/pairing code/i, 'number'), v = parseInt(codeVal || (document.getElementById('code') || {}).value, 10);
+    if (!c || !isFinite(v)) return;
+    codeVal = '';
+    post('number', c.name, 'set', '?value=' + v).then(function () { say('Pairing code sent.'); });
+  }
+  document.addEventListener('input', function (ev) {
+    if (ev.target.id !== 'code') return;
+    codeVal = ev.target.value.replace(/\D/g, '').slice(0, 6);
+    if (codeVal.length === 6) sendCode();   // the Display only waits a few seconds: send on the 6th digit
+  });
   function schedule() { if (!pend) pend = requestAnimationFrame(render); }
   function render() {
     pend = 0;
@@ -459,8 +473,7 @@
           .catch(function () { say('Could not reach the unit.'); });
       }
     } else if (a === 'code') {
-      var v = parseInt((document.getElementById('code') || {}).value, 10);
-      if (isFinite(v)) post('number', n, 'set', '?value=' + v).then(function () { say('Pairing code sent.'); });
+      sendCode();
     }
     last = ''; schedule();
   });
