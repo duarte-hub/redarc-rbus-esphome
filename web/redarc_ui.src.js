@@ -400,6 +400,11 @@
 
   /* --------------------------------------------------------------- render */
   var last = '', pend = 0, root, fresh = false;
+  var ptrDown = false, vkeyVal = '';
+  document.addEventListener('pointerdown', function () { ptrDown = true; });
+  ['pointerup', 'pointercancel'].forEach(function (t) {
+    document.addEventListener(t, function () { setTimeout(function () { ptrDown = false; last = ''; schedule(); }, 0); });
+  });
   // Digits typed into the pairing box live here, so a re-render (which replaces the input when
   // it loses focus on the Set tap) cannot wipe them before they are sent.
   var codeVal = '';
@@ -410,6 +415,7 @@
     post('number', c.name, 'set', '?value=' + v).then(function () { say('Pairing code sent.'); });
   }
   document.addEventListener('input', function (ev) {
+    if (ev.target.id === 'vpnkey') { vkeyVal = ev.target.value; return; }
     if (ev.target.id !== 'code') return;
     codeVal = ev.target.value.replace(/\D/g, '').slice(0, 6);
     if (codeVal.length === 6) sendCode();   // the Display only waits a few seconds: send on the 6th digit
@@ -417,6 +423,7 @@
   function schedule() { if (!pend) pend = requestAnimationFrame(render); }
   function render() {
     pend = 0;
+    if (ptrDown) return;   // a re-render between press and release would swallow the tap
     var body = tab === 'home' ? home() : tab === 'controls' ? controls() : tab === 'config' ? cfg() : charts();
     var html = header() + '<main class="' + tab + '">' + body + '</main>' + nav() + (drawer ? side() : '') +
       (toast ? '<div class="toast">' + esc(toast) + '</div>' : '');
@@ -426,6 +433,8 @@
     if (ae && (ae.tagName === 'SELECT' || ae.tagName === 'INPUT')) return;   // do not yank an open control
     last = html;
     root.innerHTML = html;
+    var vk = document.getElementById('vpnkey');
+    if (vk && vkeyVal) vk.value = vkeyVal;
     var m = root.querySelector('main');
     if (m) m.scrollTop = sc;
   }
@@ -456,10 +465,10 @@
       post('button', n, 'press').then(function (r) { say(r.ok ? 'Done.' : 'That button does not exist on this firmware.'); })
         .catch(function () { say('Could not reach the unit.'); });
     } else if (a === 'vpnkey') {
-      var kel = document.getElementById('vpnkey'), kv = kel && kel.value.trim();
+      var kel = document.getElementById('vpnkey'), kv = (vkeyVal || (kel && kel.value) || '').trim();
       if (kv) {
         post('text', n, 'set', '?value=' + encodeURIComponent(kv))
-          .then(function (r) { kel.value = ''; say(r.ok ? 'Auth key sent. The VPN reconnects now.' : 'Could not set the auth key.'); })
+          .then(function (r) { vkeyVal = ''; if (kel) kel.value = ''; say(r.ok ? 'Auth key sent. The VPN reconnects now.' : 'Could not set the auth key.'); })
           .catch(function () { say('Could not reach the unit.'); });
       }
     } else if (a === 'zigbee') {
