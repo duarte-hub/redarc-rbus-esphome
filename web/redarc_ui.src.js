@@ -314,9 +314,9 @@
     for (var i = 0; i < 4; i++) s += '<rect x="' + (i * 7) + '" y="' + (16 - i * 5) + '" width="5" height="' + (4 + i * 5) + '" rx="1" fill="' + (i < n ? '#8BC34A' : '#757575') + '"/>';
     return s + '</svg>';
   }
-  function sig(label, dbm, t) {
+  function sig(label, dbm, t, unit) {
     return '<div class="srow"><span>' + label + '</span><span class="sv2">' + (dbm === null ? '--' :
-      bars(dbm, t) + '<b>' + Math.round(dbm) + ' dBm</b><em>' + quality(dbm, t) + '</em>') + '</span></div>';
+      bars(dbm, t) + '<b>' + Math.round(dbm) + (unit || ' dBm') + '</b><em>' + quality(dbm, t) + '</em>') + '</span></div>';
   }
   function side() {
     var wifi = num(/wifi (signal|rssi)/i), ble = num(/ble (signal|rssi)/i);
@@ -326,7 +326,8 @@
       '<div class="ds">Connection</div>' +
       '<div class="srow"><span>Display link</span><b>' + esc(txt(/link status/i) || '--') + '</b></div>' +
       sig('Wi-Fi signal', wifi, [-50, -60, -70]) + sig('Bluetooth signal', ble, [-60, -75, -85]) +
-      (find(/zigbee (signal|rssi)/i, 'sensor') ? sig('Zigbee signal', num(/zigbee (signal|rssi)/i), [-60, -75, -85]) : '') +
+      (find(/zigbee lqi/i, 'sensor') ? sig('Zigbee link quality', num(/zigbee lqi/i), [200, 150, 100], ' LQI') :
+        find(/zigbee (signal|rssi)/i, 'sensor') ? sig('Zigbee signal', num(/zigbee (signal|rssi)/i), [-60, -75, -85]) : '') +
       '<div class="ds">Pairing</div>' +
       (on(/pairing required/i) ? '<p class="warn">The Display has not bonded with this unit yet.</p>' : '') +
       '<p class="mut">1. Open <i>Settings → Bluetooth</i> on the Display.<br>2. Tap Pair Now.<br>3. Enter the 6-digit code the Display shows.</p>' +
@@ -369,7 +370,8 @@
     h += cardc('Display (Bluetooth)', disp + '<button class="big-btn" data-act="pair">Pair Now</button>' +
       '<p class="mut zbn">Open <i>Settings → Bluetooth</i> on the Display first, then enter the code it shows in the menu.</p>');
 
-    var zb = crows([['Signal', /zigbee (signal|rssi)/i, 'sensor'], ['Link quality', /zigbee lqi/i, 'sensor']]);
+    var zb = find(/zigbee lqi/i, 'sensor') ? crows([['Link quality (LQI)', /zigbee lqi/i, 'sensor']]) :
+      crows([['Signal', /zigbee (signal|rssi)/i, 'sensor']]);
     if (zb) {
       h += cardc('Zigbee', zb + '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button>' +
         '<p class="mut zbn">Leaves the current Zigbee network and searches for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p>');

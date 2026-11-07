@@ -28,6 +28,7 @@ esp32:
       CONFIG_LWIP_TCPIP_CORE_LOCKING: n
       CONFIG_ESP_ERR_TO_NAME_LOOKUP: n   # flash: error codes are logged as numbers, not names
       CONFIG_MBEDTLS_ERROR_STRINGS: n    # flash: same for mbedTLS error text
+      CONFIG_ML_NVS_MAX_PEERS: "16"      # RAM: cached-peer table (default 64 entries on the heap)
 
 time:                        # the control plane needs a correct clock
   - platform: sntp
@@ -40,7 +41,22 @@ time:                        # the control plane needs a correct clock
 tailscale:
   # auth_key: !secret tailscale_auth_key   # optional: bake a key into the firmware instead
   hostname: "redarc-camper"
+  # RAM: the C6 has no PSRAM, and with Zigbee and BLE running an unmodified Tailscale start ran
+  # the heap out (std::bad_alloc, reboot loop). Small tailnets only need a small netmap buffer
+  # and peer table.
+  max_peers: 4
+  netmap_buffer_kb: 64
   # disable_telemetry defaults to true in this copy
+
+# Free heap and the largest free block, to see how close to running out the chip is.
+debug:
+
+sensor:
+  - platform: debug
+    free:
+      name: "ESP Free Heap"
+    block:
+      name: "ESP Largest Free Block"
 
 # Only the entities the web page's ESP tab uses.
 binary_sensor:

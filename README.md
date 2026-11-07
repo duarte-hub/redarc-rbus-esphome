@@ -431,16 +431,17 @@ external_components:
 
 sensor:
   - platform: zigbee_link
-    rssi:
-      name: "Zigbee Signal"
     lqi:
       name: "Zigbee LQI"
+    # rssi:                    # optional: the same link in dBm
+    #   name: "Zigbee Signal"
     update_interval: 30s
 ```
 
 Both read as unknown until the ESP has joined a network. They are not exposed back over Zigbee
-(Zigbee2MQTT already shows `linkquality`). The web page shows a Zigbee signal row in its menu
-when a sensor named like "Zigbee Signal" exists.
+(Zigbee2MQTT already shows `linkquality`). The web page reports the link quality (LQI, 0-255) in
+its menu and on the ESP tab when a sensor named like "Zigbee LQI" exists. It falls back to the
+dBm sensor ("Zigbee Signal") only when there is no LQI sensor.
 
 ## Tailscale (optional)
 
