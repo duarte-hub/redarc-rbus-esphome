@@ -427,8 +427,10 @@ Wi-Fi. By default it exposes *every* named sensor, binary sensor, switch and num
 ESPHome opt-out (`internal: true`) also hides the entity from Home Assistant. This component ships
 a small filter (`zigbee_filter.py`, applied automatically when `zigbee:` is in the config) that
 leaves entities as normal ESPHome entities but only puts a short list on Zigbee: battery SoC,
-voltage, current, power, temperature, time remaining, solar power, tank levels, fault active,
-the Wi-Fi / BLE signal sensors, and all switches. Edit `ZIGBEE_EXPOSE` in that file to change it.
+voltage, current, power, temperature, time remaining, solar power, voltage and current, the
+240V AC / vehicle / solar inputs (active, voltage, current), charger output and load current,
+inverter on and power, tank levels, fault active, the Wi-Fi / BLE signal sensors, and all
+switches. Text sensors (charging stage, faults text) cannot go over Zigbee. Edit `ZIGBEE_EXPOSE` in that file to change it.
 
 ```yaml
 zigbee:
