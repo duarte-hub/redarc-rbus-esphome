@@ -65,7 +65,23 @@
   var drawer = false;
   var chart = { metric: 'soc', per: 'hour' };
   var toast = '', toastT = 0;
-  var fw = {};             // firmware update: cur (running version), url (release notes)
+  // Firmware update: cur (running version), url (release notes), and while an update or check
+  // runs: log (lines shown under the progress bar), pct, active (install), dropped (rebooting).
+  var fw = { log: [], pct: null, active: false, checking: false, dropped: false };
+  function fwLog(line) {
+    var t = new Date(), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    line = String(line).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
+    if (!line || (fw.log.length && fw.log[fw.log.length - 1].m === line)) return;
+    fw.log.push({ t: p2(t.getHours()) + ':' + p2(t.getMinutes()) + ':' + p2(t.getSeconds()), m: line });
+    if (fw.log.length > 300) fw.log.shift();
+    schedule();
+  }
+  function fwRefresh(name, then) {
+    fetch('/update/' + encodeURIComponent(name) + '?detail=all')
+      .then(function (r) { return r.json(); })
+      .then(function (j) { fw.cur = j.current_version || ''; fw.url = j.release_url || ''; if (then) then(j); schedule(); })
+      .catch(function () {});
+  }
 
   function onState(d) {
     var id = d.name_id || d.id;
@@ -74,16 +90,27 @@
     var name = id.slice(id.indexOf('/') + 1);
     var e = ents[id] || (ents[id] = { id: id, domain: dom, name: name });
     e.state = d.state;
+    var prevState = e.state, prevValue = e.value;
     e.value = d.value;
     if (prefix === null && /battery so[ch]$/i.test(name)) prefix = name.replace(/battery so[ch]$/i, '');
     e.short = prefix ? name.replace(prefix, '') : name;
-    if (dom === 'update' && fw.cur === undefined) {
-      fw.cur = '';
-      fetch('/update/' + encodeURIComponent(name) + '?detail=all')
-        .then(function (r) { return r.json(); })
-        .then(function (j) { fw.cur = j.current_version || ''; fw.url = j.release_url || ''; schedule(); })
-        .catch(function () { fw.cur = undefined; });
+    if (dom === 'update') {
+      if (fw.cur === undefined) { fw.cur = ''; fwRefresh(name); }
+      var ust = String(d.state || '').toUpperCase();
+      if (/INSTALLING/.test(ust) && !fw.active) {   // started here or from Home Assistant
+        fw.active = true; fw.pct = 0; fwLog('Installing ' + (d.value || 'the update'));
+      }
+      if (fw.active && /AVAILABLE/.test(ust) && /INSTALLING/.test(String(prevState || '').toUpperCase())) {
+        fw.active = false; fwLog('Install did not complete; still on ' + (fw.cur || 'the old firmware'));
+      }
+      if (fw.checking && !fw.active && (ust !== String(prevState || '').toUpperCase() || d.value !== prevValue || fw.checking === 'sent')) {
+        fw.checking = false;
+        fwLog(/AVAILABLE/.test(ust) ? 'Update available: ' + d.value + ' (running ' + (fw.cur || '?') + ')'
+                                    : 'Up to date: latest on GitHub is ' + (d.value || fw.cur || '?'));
+      }
     }
+    if (dom === 'sensor' && /update progress$/i.test(name) && fw.active && d.value !== null && isFinite(d.value)) fw.pct = d.value;
+    if (dom === 'text_sensor' && /update log$/i.test(name) && fw.active && d.state) fwLog(d.state);
     if (dom === 'select' && !opts[name]) {
       opts[name] = [];
       fetch('/select/' + encodeURIComponent(name) + '?detail=all')
@@ -400,9 +427,13 @@
       h += cardc('Firmware', crow('Running', fw.cur || '--') + crow('Latest', latest || '--') +
         crow('Status', busy ? 'Installing… the unit reboots when done' : avail ? 'Update available' : st ? 'Up to date' : '--') +
         (fw.url ? '<p class="mut zbn"><a href="' + esc(fw.url) + '" target="_blank" rel="noopener">Release notes</a></p>' : '') +
+        (fw.active ? '<div class="prog"><i style="width:' + Math.max(2, Math.min(100, fw.pct || 0)) + '%"></i></div>' +
+          '<p class="mut zbn">' + (fw.dropped ? 'Rebooting…' : fw.pct === null ? 'Starting…' : Math.round(fw.pct) + '%') + '</p>' : '') +
+        (fw.log.length ? '<pre class="fwlog" id="fwlog">' + fw.log.map(function (l) { return esc(l.t + '  ' + l.m); }).join('\n') + '</pre>' +
+          (fw.active ? '' : '<button class="sm fwclr" data-act="fwclear">Clear log</button>') : '') +
         '<div class="pbtn">' +
-        (chk ? '<button class="big-btn zb" data-act="btn" data-n="' + esc(chk.name) + '">Check for update</button>' : '') +
-        (avail && !busy ? '<button class="big-btn' + (fwArm ? ' rs arm' : '') + '" data-act="fwinstall" data-n="' + esc(upd.name) + '">' +
+        (chk && !fw.active ? '<button class="big-btn zb" data-act="fwcheck" data-n="' + esc(chk.name) + '">Check for update</button>' : '') +
+        (avail && !busy && !fw.active ? '<button class="big-btn' + (fwArm ? ' rs arm' : '') + '" data-act="fwinstall" data-n="' + esc(upd.name) + '">' +
           (fwArm ? 'Tap again to install' : 'Install &amp; reboot') + '</button>' : '') +
         '</div>');
     }
@@ -512,7 +543,11 @@
       last = html;
     }
     fresh = false;
-    if (force || body !== lastBody) { m.innerHTML = body; lastBody = body; }
+    if (force || body !== lastBody) {
+      m.innerHTML = body; lastBody = body;
+      var lg = document.getElementById('fwlog');
+      if (lg) lg.scrollTop = lg.scrollHeight;
+    }
     var vk = document.getElementById('vpnkey');
     if (vk && vkeyVal) vk.value = vkeyVal;
     var mi2 = document.getElementById('macin');
@@ -567,10 +602,23 @@
         fwT = setTimeout(function () { fwArm = false; last = ''; schedule(); }, 5000);
       } else {
         fwArm = false; clearTimeout(fwT);
+        var up = find(/./, 'update');
+        fw.log = []; fw.active = true; fw.pct = null; fw.updName = n;
+        fwLog('Install requested: ' + (fw.cur || '?') + ' -> ' + ((up && up.value) || '?'));
         post('update', n, 'install')
-          .then(function (r) { say(r.ok ? 'Downloading the update. The unit reboots when it is installed; this page reconnects after about a minute.' : 'Could not start the update.'); })
-          .catch(function () { say('Could not reach the unit.'); });
+          .then(function (r) {
+            if (r.ok) fwLog('The unit is fetching the update from GitHub');
+            else { fw.active = false; fwLog('Could not start the update (HTTP ' + r.status + ')'); }
+          })
+          .catch(function () { fw.active = false; fwLog('Could not reach the unit'); });
       }
+    } else if (a === 'fwcheck') {
+      fw.checking = 'sent';
+      fwLog('Checking GitHub for a new version');
+      setTimeout(function () { if (fw.checking) { fw.checking = false; fwLog('No answer from the check yet; try again in a minute'); } }, 20000);
+      post('button', n, 'press').catch(function () { fw.checking = false; fwLog('Could not reach the unit'); });
+    } else if (a === 'fwclear') {
+      fw.log = [];
     } else if (a === 'mac') {
       var mel = document.getElementById('macin'), mv = (macVal || (mel && mel.value) || '').trim().toUpperCase();
       if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mv)) say('Enter the MAC as AA:BB:CC:DD:EE:FF.');
@@ -643,6 +691,8 @@
     '.cfg input{flex:1;min-width:0;width:auto;letter-spacing:0;text-align:left;font-size:16px}.cfg summary{cursor:pointer;color:var(--g);padding:10px 0}.cfg details .srow{font-size:14px}' +
     '.pbtn{display:flex;gap:10px;margin-top:18px}.pbtn .big-btn{margin-top:0;flex:1;width:auto;padding:15px 6px;font-size:18px}.pbtn .zb{background:transparent;color:var(--g);border:2px solid var(--g)}.pbtn .zb.arm{background:#EF5350;border-color:#EF5350;color:#fff}.zbn{font-size:13px;margin-top:12px}' +
     '.sm{background:var(--g);color:#000;border-radius:18px;padding:8px 16px;font-weight:600}.big-btn{width:100%;margin-top:18px;background:var(--g);color:#000;border-radius:28px;padding:15px;font-size:20px;font-weight:600}.warn{color:#EF5350}' +
+    '.cfg a{color:var(--g)}.prog{height:14px;border-radius:7px;background:var(--ln);overflow:hidden;margin:16px 0 0}.prog i{display:block;height:100%;background:var(--g);transition:width .4s}' +
+    '.fwlog{max-height:220px;overflow:auto;background:#111;color:#cfd8dc;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;padding:10px 12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;margin:12px 0 6px}.fwclr{margin-top:4px}' +
     '.toast{position:absolute;left:16px;right:16px;bottom:110px;background:#E0E0E0;color:#212121;border-radius:10px;padding:14px 16px;z-index:9;box-shadow:var(--sh)}';
 
   function boot() {
@@ -655,6 +705,22 @@
     render();
     var es = new EventSource('/events');
     es.addEventListener('state', function (m) { try { onState(JSON.parse(m.data)); } catch (e) {} });
+    // While an update runs, show the unit's own log lines (warnings and errors) under the bar.
+    es.addEventListener('log', function (m) { if (fw.active) fwLog(m.data); });
+    es.addEventListener('error', function () {
+      if (fw.active && !fw.dropped) { fw.dropped = true; fwLog('Connection to the unit closed: rebooting into the new firmware'); }
+    });
+    es.addEventListener('open', function () {
+      if (!fw.dropped) return;
+      fw.dropped = false;
+      fwLog('Unit is back online');
+      var up = find(/./, 'update'), was = fw.cur;
+      fwRefresh((up && up.name) || fw.updName || '', function (j) {
+        fw.active = false;
+        fwLog(j.current_version && j.current_version !== was ? 'Update finished: now running ' + j.current_version
+                                                             : 'Running ' + (j.current_version || '?') + ' (unchanged)');
+      });
+    });
     setInterval(schedule, 30000);   // keep the chart clock fresh
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

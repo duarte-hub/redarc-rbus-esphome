@@ -70,8 +70,46 @@ api:
 ota:
   # Pushes from ESPHome authenticate with the provisioned API key.
   - platform: esphome
-  # Updates pulled from GitHub Pages (update entity below).
+  # Updates pulled from GitHub (update entity below). The web page shows these as a progress
+  # bar and a log; the OTA component's own messages are compiled out at logger level WARN.
   - platform: http_request
+    on_begin:
+      - sensor.template.publish:
+          id: update_progress
+          state: 0
+      - text_sensor.template.publish:
+          id: update_log
+          state: !lambda |-
+            return "Downloading " + id(firmware_update).update_info.firmware_url +
+                   " (MD5 " + id(firmware_update).update_info.md5 + ")";
+    on_progress:
+      - sensor.template.publish:
+          id: update_progress
+          state: !lambda return x;
+      - text_sensor.template.publish:
+          id: update_log
+          state: !lambda |-
+            char b[32];
+            snprintf(b, sizeof(b), "Downloaded and written %.0f%%", x);
+            return std::string(b);
+    on_end:
+      - sensor.template.publish:
+          id: update_progress
+          state: 100
+      - text_sensor.template.publish:
+          id: update_log
+          state: "Download complete, MD5 verified. Rebooting into the new firmware"
+    on_error:
+      - text_sensor.template.publish:
+          id: update_log
+          state: !lambda |-
+            char b[48];
+            snprintf(b, sizeof(b), "Update failed (error %u); still on the old firmware", (unsigned) x);
+            return std::string(b);
+    on_abort:
+      - text_sensor.template.publish:
+          id: update_log
+          state: "Update aborted; still on the old firmware"
 
 http_request:
   verify_ssl: true
@@ -258,6 +296,13 @@ sensor:
         name: "TVMS 1 Tank 2 Level"
         unit_of_measurement: "%"
 
+  - platform: template
+    name: "TVMS 1 Update Progress"
+    id: update_progress
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: never
+    entity_category: diagnostic
   - platform: uptime
     name: "ESP Uptime"
   - platform: wifi_signal
@@ -298,6 +343,11 @@ binary_sensor:
         name: "TVMS 1 Tank 2 Alarm"
 
 text_sensor:
+  - platform: template
+    name: "TVMS 1 Update Log"
+    id: update_log
+    update_interval: never
+    entity_category: diagnostic
   - platform: debug
     reset_reason:
       name: "ESP Reset Reason"

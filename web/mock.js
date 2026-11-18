@@ -30,8 +30,30 @@
   S.push(['switch', 'Master Switch', true]);
   S.push(['update', 'Firmware', '2026.11.2']);   // value = latest version on GitHub Pages
 
+  var running = '2026.11.1', latest = '2026.11.2', es = null;
+  function emit(type, data) { ((es && es.h[type]) || []).forEach(function (fn) { fn({ data: data }); }); }
+  function st(id, state, value) { emit('state', JSON.stringify({ id: id, state: state, value: value })); }
+  // Fake an update: progress + log lines, a reboot (connection drops), then the new version.
+  function fakeInstall() {
+    var U = 'update/' + P + 'Firmware';
+    st(U, 'INSTALLING', latest);
+    st('text_sensor/' + P + 'Update Log', 'Downloading https://raw.githubusercontent.com/duarte-hub/redarc-rbus-esphome/ota/redarc-camper-' + latest + '.ota.bin (MD5 4e39…)', null);
+    var pct = 0, t = setInterval(function () {
+      pct += 12.5;
+      st('sensor/' + P + 'Update Progress', String(pct), pct);
+      st('text_sensor/' + P + 'Update Log', 'Downloaded and written ' + pct + '%', null);
+      if (pct >= 100) {
+        clearInterval(t);
+        emit('log', '\x1b[0;33m[W][http_request.ota:120]: example warning line from the unit\x1b[0m');
+        st('text_sensor/' + P + 'Update Log', 'Download complete, MD5 verified. Rebooting into the new firmware', null);
+        setTimeout(function () { emit('error', ''); running = latest; }, 400);
+        setTimeout(function () { emit('open', ''); st(U, 'NO UPDATE', latest); }, 2500);
+      }
+    }, 250);
+  }
   function ES() {
     var self = this;
+    es = this;
     this.h = {};
     setTimeout(function () {
       S.forEach(function (r) {
@@ -46,10 +68,12 @@
 
   window.fetch = function (url, o) {
     console.log('[mock]', (o && o.method) || 'GET', decodeURIComponent(url));
+    if (/\/update\/.*\/install/.test(url)) setTimeout(fakeInstall, 100);
+    if (/Check%20for%20Update\/press/.test(url)) setTimeout(function () { st('update/' + P + 'Firmware', 'UPDATE AVAILABLE', latest); }, 300);
     return Promise.resolve({
       ok: true,
       json: function () {
-        return Promise.resolve(/\/update\//.test(url) ? { current_version: '2026.11.1', release_url: 'https://github.com/duarte-hub/redarc-rbus-esphome/releases' }
+        return Promise.resolve(/\/update\//.test(url) ? { current_version: running, release_url: 'https://github.com/duarte-hub/redarc-rbus-esphome/releases' }
           : { option: ['Touring Mode', 'Storage Mode', 'Standby Mode'] });
       }
     });
