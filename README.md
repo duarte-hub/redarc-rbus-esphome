@@ -395,10 +395,31 @@ To preview without a device, run `python3 -m http.server` in `web/` and open `de
 
 ## Public firmware and updates from GitHub
 
-`firmware/redarc-camper.yaml` is a complete firmware for a Seeed XIAO ESP32-C6 with nothing
-private compiled in, so the binary is public. Pushing a tag like `v2026.11.1` runs
-`.github/workflows/firmware.yml`, which builds it and publishes `manifest.json` and the image to
-the `ota` branch (served from `raw.githubusercontent.com`) and to a GitHub release.
+The public firmware has nothing private compiled in, so the binaries are public. There is one
+file per board; everything else is shared in `firmware/common.yaml`:
+
+| Board | File | Flash / PSRAM | Notes |
+|---|---|---|---|
+| Seeed XIAO ESP32-C6 | `firmware/redarc-camper.yaml` | 4 MB / none | RF switch set to the U.FL antenna at boot; asserts compiled silent to fit |
+| Seeed XIAO ESP32-C5 | `firmware/redarc-camper-c5.yaml` | 8 MB / 8 MB | 3.75 MB app slots, 384 KB NVS, Improv over Bluetooth too, dual-band Wi-Fi 6; status LED is the onboard user LED (GPIO27) |
+
+Pushing a tag like `v2026.11.1` runs `.github/workflows/firmware.yml`, which builds every board
+and publishes one `manifest.json` (a build per chip) and the images to the `ota` branch (served
+from `raw.githubusercontent.com`) and to a GitHub release. Each unit installs the build for its
+own chip.
+
+### Setting up a new XIAO ESP32-C5
+
+1. Flash `redarc-camper-c5-<version>.factory.bin` from the release at https://web.esphome.io
+   (*Connect*, *Install*), or `esphome run firmware/redarc-camper-c5.yaml` over USB.
+2. Wi-Fi: *Configure Wi-Fi* on the same page (Improv over USB), or the *Improv via BLE*
+   discovery in the Home Assistant app.
+3. Add the device in Home Assistant, which provisions the API key.
+4. Config tab: enter the Display MAC, then *Pair Now* and the code the Display shows.
+5. Zigbee (optional): *permit join* in Zigbee2MQTT, then *Zigbee Pair*.
+
+Both boards use the node name `redarc-camper`, so switch the old unit off (or change `name:`)
+before bringing the new one up.
 
 A unit checks the manifest every 12 hours. The web page's Config tab shows the running and latest
 version with **Check for update** and **Install & reboot**; Home Assistant shows the same update
@@ -417,10 +438,10 @@ To move a unit that runs a private build (Wi-Fi, key and MAC compiled in), insta
 `firmware/migrate.example.yaml` once from ESPHome: it saves those settings into flash, after
 which *Install & reboot* switches it to the GitHub firmware.
 
-Flash is the limit: with HTTPS updates the image fills 99% of a 1.875 MB app slot on a 4 MB
-board. Adding features needs an 8 MB board.
+Flash is the limit on the C6: with HTTPS updates the image fills about 96% of a 1.875 MB app
+slot on the 4 MB board. New features go on the 8 MB ESP32-C5.
 
-## Zigbee (optional, ESP32-C6/H2)
+## Zigbee (optional, ESP32-C5/C6/H2)
 
 ESPHome's `zigbee:` component can expose the node to Zigbee2MQTT or ZHA as an end device next to
 Wi-Fi. By default it exposes *every* named sensor, binary sensor, switch and number, and the only
@@ -445,7 +466,8 @@ button:
 
 Turn on *permit join* in Zigbee2MQTT / ZHA, then press the button (or **Zigbee Pair** in the web
 page menu). After any change to the entity list, remove the device in Zigbee2MQTT / ZHA and
-pair it again. The ESP32-C6 shares one radio between Wi-Fi, Bluetooth and Zigbee, so watch the
+pair it again. *Zigbee Pair* also wipes the Bluetooth bond with the Display (ESPHome keeps
+Zigbee data in the same NVS partition), so pair the Display again after it. The ESP32-C5/C6 share one radio between Wi-Fi, Bluetooth and Zigbee, so watch the
 Display link after enabling it; ESPHome's docs note C6 boards that only work close to the
 coordinator.
 

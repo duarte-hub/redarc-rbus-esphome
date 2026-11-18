@@ -1,8 +1,9 @@
-# Builds the public firmware (firmware/redarc-camper.yaml) and publishes it for OTA updates.
+# Builds the public firmware for each board (XIAO ESP32-C6 and ESP32-C5) and publishes it for
+# OTA updates.
 #
 # Release: push a tag like v2026.11.1. The unit's update entity reads
 #   https://raw.githubusercontent.com/<owner>/<repo>/ota/manifest.json
-# and the "ota" branch is replaced with the new manifest and image. The images are also
+# and the "ota" branch is replaced with the new manifest and images (one build per chip). The images are also
 # attached to a GitHub release.
 #
 # Run it by hand (Actions -> Firmware -> Run workflow) to test a build without publishing.
@@ -23,8 +24,9 @@ concurrency:
 
 env:
   ESPHOME_VERSION: "2026.11.0"
-  CONFIG: firmware/redarc-camper.yaml
-  NAME: redarc-camper
+  # Board files in firmware/: redarc-camper = XIAO ESP32-C6, redarc-camper-c5 = XIAO ESP32-C5.
+  CONFIGS: redarc-camper redarc-camper-c5
+  NAME: redarc-camper   # node name, shared by the boards
 
 jobs:
   build:
@@ -65,40 +67,48 @@ jobs:
 
       - name: Compile
         run: |
-          esphome -s version "${{ steps.v.outputs.version }}" -s ref "${{ steps.v.outputs.ref }}" \
-            compile "$CONFIG" 2>&1 | tee build.log
-          grep -E "^(RAM|Flash):|app partition" build.log >> "$GITHUB_STEP_SUMMARY" || true
+          set -o pipefail
+          for cfg in $CONFIGS; do
+            echo "## $cfg" >> "$GITHUB_STEP_SUMMARY"
+            esphome -s version "${{ steps.v.outputs.version }}" -s ref "${{ steps.v.outputs.ref }}" \
+              compile "firmware/$cfg.yaml" 2>&1 | tee "build-$cfg.log"
+            grep -E "^(RAM|Flash):|app partition" "build-$cfg.log" >> "$GITHUB_STEP_SUMMARY" || true
+            # Every board builds into the same directory (same node name): keep the images now.
+            mkdir -p "img/$cfg"
+            cp "$(find firmware/.esphome/build/$NAME -name firmware.ota.bin | head -1)" "img/$cfg/ota.bin"
+            cp "$(find firmware/.esphome/build/$NAME -name firmware.factory.bin | head -1)" "img/$cfg/factory.bin"
+          done
 
-      - name: Collect images
-        id: img
+      - name: Manifest
         run: |
           set -e
-          ota=$(find firmware/.esphome/build/$NAME -name firmware.ota.bin | head -1)
-          factory=$(find firmware/.esphome/build/$NAME -name firmware.factory.bin | head -1)
-          test -f "$ota"
-          v="${{ steps.v.outputs.version }}"
           mkdir -p out
-          cp "$ota" "out/$NAME-$v.ota.bin"
-          [ -n "$factory" ] && cp "$factory" "out/$NAME-$v.factory.bin"
-          md5=$(md5sum "out/$NAME-$v.ota.bin" | cut -d' ' -f1)
-          python3 - "$v" "$md5" <<'PY'
-          import json, os, sys
-          v, md5 = sys.argv[1], sys.argv[2]
-          repo, name = os.environ["GITHUB_REPOSITORY"], os.environ["NAME"]
+          python3 - "${{ steps.v.outputs.version }}" <<'PY'
+          import hashlib, json, os, shutil, sys
+          v = sys.argv[1]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          # One build per chip; a unit installs the build whose chipFamily matches its own chip.
+          chips = {"redarc-camper": "ESP32-C6", "redarc-camper-c5": "ESP32-C5"}
+          builds = []
+          for cfg in os.environ["CONFIGS"].split():
+              ota, factory = f"{cfg}-{v}.ota.bin", f"{cfg}-{v}.factory.bin"
+              shutil.copy(f"img/{cfg}/ota.bin", f"out/{ota}")
+              shutil.copy(f"img/{cfg}/factory.bin", f"out/{factory}")
+              builds.append({
+                  "chipFamily": chips[cfg],
+                  "ota": {
+                      "path": ota,
+                      "md5": hashlib.md5(open(f"out/{ota}", "rb").read()).hexdigest(),
+                      "release_url": f"https://github.com/{repo}/releases/tag/v{v}",
+                      "summary": f"redarc-rbus-esphome {v}",
+                  },
+                  "parts": [{"path": factory, "offset": 0}],
+              })
           manifest = {
               "name": "REDARC TVMS bridge",
               "version": v,
               "home_assistant_domain": "esphome",
-              "builds": [{
-                  "chipFamily": "ESP32-C6",
-                  "ota": {
-                      "path": f"{name}-{v}.ota.bin",
-                      "md5": md5,
-                      "release_url": f"https://github.com/{repo}/releases/tag/v{v}",
-                      "summary": f"redarc-rbus-esphome {v}",
-                  },
-                  "parts": [{"path": f"{name}-{v}.factory.bin", "offset": 0}],
-              }],
+              "builds": builds,
           }
           json.dump(manifest, open("out/manifest.json", "w"), indent=2)
           PY

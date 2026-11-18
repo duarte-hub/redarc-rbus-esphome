@@ -1,0 +1,55 @@
+# Public firmware: REDARC TVMS bridge on a Seeed XIAO ESP32-C5
+# (8 MB flash, 8 MB PSRAM, dual-band Wi-Fi 6, BLE 5, Zigbee; antenna on the U.FL connector).
+#
+# Same firmware as the XIAO ESP32-C6 build (everything shared is in common.yaml), with room to
+# spare: full assert messages, Improv over Bluetooth as well as USB, and PSRAM for the BLE/Wi-Fi
+# stacks. GitHub releases carry a build for each chip in one manifest; this board installs the
+# ESP32-C5 one.
+#
+# First setup (USB, once):
+#   1. Flash the release's redarc-camper-c5.factory.bin at https://web.esphome.io (Connect ->
+#      Install), or "esphome run firmware/redarc-camper-c5.yaml".
+#   2. Wi-Fi: Improv over USB on the same page (Configure Wi-Fi), or Improv over Bluetooth from
+#      the Home Assistant app (Settings -> Devices -> the "Improv via BLE" discovery).
+#   3. Add the device in Home Assistant; it provisions the API key.
+#   4. Web UI Config page: enter the Display MAC, then Pair Now and the code the Display shows.
+#   5. Zigbee: permit join in Zigbee2MQTT, then press "Zigbee Pair" on the unit.
+#
+# The board has no RF switch (unlike the C6): the antenna on the U.FL connector is the only one.
+# Build locally: python3 web/build.py && cp web/redarc_ui.js firmware/ && esphome compile firmware/redarc-camper-c5.yaml
+
+substitutions:
+  name: redarc-camper
+  friendly_name: REDARC Battery
+  version: dev          # CI sets the release version (tag without the leading "v")
+  ref: main             # git ref the components are fetched from; CI sets the release tag
+  manifest_url: https://raw.githubusercontent.com/duarte-hub/redarc-rbus-esphome/ota/manifest.json
+  # Onboard user LED (GPIO27, lights when driven low; ESPHome warns it is a strapping pin, which
+  # is fine for the board's own LED). For an external LED on D2 like the C6 unit: GPIO25, "false".
+  status_led_pin: GPIO27
+  status_led_inverted: "true"
+
+packages:
+  common: !include common.yaml
+
+esp32:
+  board: seeed_xiao_esp32c5
+  flash_size: 8MB
+  variant: esp32c5
+  partitions: partitions-c5.csv
+  framework:
+    type: esp-idf
+    advanced:
+      # Keep a crash dump in the coredump partition so the next panic leaves a backtrace.
+      include_builtin_idf_components: [espcoredump]
+    sdkconfig_options:
+      CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH: y
+      CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF: y
+
+psram:
+  mode: quad
+  speed: 80MHz
+
+# Wi-Fi setup from a phone over Bluetooth (in addition to USB; there is flash for it on this board).
+improv_ble:
+  authorizer: none
