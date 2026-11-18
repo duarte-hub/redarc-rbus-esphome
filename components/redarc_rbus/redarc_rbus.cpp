@@ -531,7 +531,11 @@ void RedarcRbus::set_remote_mac(const std::string &mac) {
   // from flash at boot), so look again for the new one.
   if (this->setup_done_)
     this->esp_bonded_ = this->esp_has_bond_();
-  this->parent()->set_state(espbt::ClientState::IDLE);  // let the tracker re-promote it
+  // Let the tracker re-promote it. Not while INIT: the client registers with the BLE stack
+  // from INIT in its own loop, and forcing IDLE first (MAC applied from flash at boot) left it
+  // unregistered, so it never connected.
+  if (this->parent()->state() != espbt::ClientState::INIT)
+    this->parent()->set_state(espbt::ClientState::IDLE);
 }
 
 void RedarcRbus::pair_now() {
