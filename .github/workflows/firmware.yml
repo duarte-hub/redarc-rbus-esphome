@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ESPHOME_VERSION: "2026.10.2"
+  ESPHOME_VERSION: "2026.11.0"
   CONFIG: firmware/redarc-camper.yaml
   NAME: redarc-camper
 

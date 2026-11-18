@@ -52,6 +52,9 @@ esp32:
     advanced:
       # Keep a crash dump in the coredump partition so the next panic leaves a backtrace.
       include_builtin_idf_components: [espcoredump]
+      # A failed assert still stops the firmware, without its file/line text (the crash
+      # handler only keeps the address anyway). Saves the flash this 4 MB board is short of.
+      assertion_level: SILENT
     sdkconfig_options:
       CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH: y
       CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF: y
@@ -103,7 +106,7 @@ ota:
       - text_sensor.template.publish:
           id: update_log
           state: !lambda |-
-            char b[48];
+            char b[64];
             snprintf(b, sizeof(b), "Update failed (error %u); still on the old firmware", (unsigned) x);
             return std::string(b);
     on_abort:
