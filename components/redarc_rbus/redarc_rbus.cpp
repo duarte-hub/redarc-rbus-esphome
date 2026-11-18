@@ -1012,6 +1012,10 @@ void RedarcRbus::update_gate_(uint32_t now) {
   this->last_gate_ms_ = now;
   const bool backing_off = (int32_t) (this->backoff_until_ - now) > 0;
   const bool pairing = (int32_t) (this->pair_window_until_ - now) > 0;
+  // The bond list may not be readable yet when the Display MAC is applied at boot, so keep
+  // looking while we think there is none.
+  if (!this->esp_bonded_)
+    this->esp_bonded_ = this->esp_has_bond_();
   // Pair Now always opens the gate: the user is at the Display.
   const bool open = pairing || (this->esp_bonded_ && !backing_off);
   if (open == this->gate_open_)
