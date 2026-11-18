@@ -22,18 +22,20 @@
     ['text_sensor', 'VPN Setup Hint', 'Connected'], ['text_sensor', 'VPN Auth Key Source', 'Firmware'],
     ['switch', 'VPN Enabled', true], ['text', 'VPN Auth Key Override', ''],
     ['select', 'Charging Mode', 'Touring Mode'],
-    ['number', 'Pairing Code', 123456]
+    ['number', 'Pairing Code', 123456],
+    ['text', 'Display MAC', 'D4:CA:6E:00:00:01'], ['button', 'Check for Update', null]
   ];
   ['Main Light', 'Front Light', 'Left Light', 'Right Light', 'Tent Light', 'Accessories', 'Compressor', 'Stereo & 2-way', 'Fridge', 'Inverter', 'Water Pump']
     .forEach(function (n) { S.push(['switch', n, n === 'Accessories']); });
   S.push(['switch', 'Master Switch', true]);
+  S.push(['update', 'Firmware', '2026.11.2']);   // value = latest version on GitHub Pages
 
   function ES() {
     var self = this;
     this.h = {};
     setTimeout(function () {
       S.forEach(function (r) {
-        var v = r[2], st = typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : String(v);
+        var v = r[2], st = typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : r[0] === 'update' ? 'UPDATE AVAILABLE' : String(v);
         var m = { data: JSON.stringify({ id: r[0] + '/' + P + r[1], state: st, value: v }) };
         (self.h.state || []).forEach(function (fn) { fn(m); });
       });
@@ -46,7 +48,10 @@
     console.log('[mock]', (o && o.method) || 'GET', decodeURIComponent(url));
     return Promise.resolve({
       ok: true,
-      json: function () { return Promise.resolve({ option: ['Touring Mode', 'Storage Mode', 'Standby Mode'] }); }
+      json: function () {
+        return Promise.resolve(/\/update\//.test(url) ? { current_version: '2026.11.1', release_url: 'https://github.com/duarte-hub/redarc-rbus-esphome/releases' }
+          : { option: ['Touring Mode', 'Storage Mode', 'Standby Mode'] });
+      }
     });
   };
 })();

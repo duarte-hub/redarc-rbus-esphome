@@ -1,0 +1,11 @@
+# Name,   Type, SubType,  Offset,   Size,     Flags
+# 4 MB ESP32-C6. Two 1.875 MB app slots (OTA writes one while the other runs), Zigbee's zb_fct,
+# 64 KB NVS (Wi-Fi, API key, Display MAC, Bluetooth bond) and a coredump partition.
+# Only a full USB flash writes this table; OTA updates keep the one already on the unit.
+otadata,  data, ota,      0x9000,   0x2000,
+phy_init, data, phy,      0xB000,   0x1000,
+zb_fct,   data, fat,      0xC000,   0x1000,
+app0,     app,  ota_0,    0x10000,  0x1E0000,
+app1,     app,  ota_1,    0x1F0000, 0x1E0000,
+nvs,      data, nvs,      0x3D0000, 0x10000,
+coredump, data, coredump, 0x3E0000, 0x10000,

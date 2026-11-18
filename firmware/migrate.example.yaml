@@ -1,0 +1,46 @@
+# One-time migration of a unit that runs a private build (Wi-Fi, API key and Display MAC compiled
+# in) to the public firmware, which reads them from flash instead.
+#
+# Copy next to your secrets.yaml in ESPHome, set display_mac, and install it once from ESPHome.
+# When the unit is back on Wi-Fi it saves the three settings into flash; then press
+# "Install & reboot" on the web UI's Config page (or install the update in Home Assistant) to
+# switch to the public firmware from GitHub. Keep this file to push builds from ESPHome later:
+# it builds the same firmware as GitHub, plus your settings.
+
+substitutions:
+  version: migration          # never equal to a release, so the GitHub build shows as an update
+  display_mac: "AA:BB:CC:DD:EE:FF"
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  api_key: !secret api_key
+
+packages:
+  public:
+    url: https://github.com/duarte-hub/redarc-rbus-esphome
+    ref: main
+    files: [firmware/redarc-camper.yaml]
+    refresh: 0s
+
+api:
+  encryption:
+    key: ${api_key}
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  on_connect:
+    - lambda: |-
+        // Wi-Fi: the public firmware has no network compiled in and loads this slot.
+        wifi::SavedWifiSettings w{};
+        strncpy(w.ssid, R"(${wifi_ssid})", sizeof(w.ssid) - 1);
+        strncpy(w.password, R"(${wifi_password})", sizeof(w.password) - 1);
+        global_preferences->make_preference<wifi::SavedWifiSettings>(88491487UL, true).save(&w);
+        // API key (also authenticates OTA uploads), in the slot the public firmware loads.
+        api::SavedNoisePsk k{};
+        if (base64_decode(std::string(R"(${api_key})"), k.psk.data(), k.psk.size()) == k.psk.size())
+          global_preferences->make_preference<api::SavedNoisePsk>(88491486UL, true).save(&k);
+        // Display MAC.
+        if (id(display_mac).state.empty())
+          id(display_mac).make_call().set_value("${display_mac}").perform();
+        global_preferences->sync();
+        ESP_LOGW("migrate", "Settings saved to flash; ready for the GitHub firmware");

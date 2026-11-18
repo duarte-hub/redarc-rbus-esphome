@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Build web/redarc_ui.js from redarc_ui.src.js.
 
-The page uses the RedVision app's own icons. They are REDARC's artwork, so they are not
-stored in this repository: point this script at the assets of an APK you extracted yourself
-(the folder that contains images/icons_controls, images/icons, ...):
+By default the page uses generic Material Icons (Apache-2.0) that ship with the source, so
+no extra files are needed:
+
+    python3 web/build.py
+
+You can swap in the RedVision app's own icons for a private build. They are REDARC's artwork,
+so they are not stored in this repository and must never go into a published firmware: point
+this script at the assets of an APK you extracted yourself (the folder that contains
+images/icons_controls, images/icons, ...):
 
     unzip your.apk 'assets/flutter_assets/assets/*'
     python3 web/build.py path/to/assets/flutter_assets/assets
@@ -57,14 +63,17 @@ def clean(svg: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
+    if len(sys.argv) > 2:
         sys.exit(__doc__)
-    assets = Path(sys.argv[1])
-    icons = {k: clean((assets / p).read_text()) for k, p in ICONS.items()}
+    icons = {}
+    if len(sys.argv) == 2:
+        assets = Path(sys.argv[1])
+        icons = {k: clean((assets / p).read_text()) for k, p in ICONS.items()}
     src = (HERE / "redarc_ui.src.js").read_text()
     out = src.replace("/*ICONS*/{}", json.dumps(icons, separators=(",", ":")))
     (HERE / "redarc_ui.js").write_text(out)
-    print(f"redarc_ui.js: {len(out) / 1024:.1f} KiB, {len(icons)} icons")
+    kind = f"{len(icons)} app icons" if icons else "generic icons"
+    print(f"redarc_ui.js: {len(out) / 1024:.1f} KiB, {kind}")
 
 
 if __name__ == "__main__":

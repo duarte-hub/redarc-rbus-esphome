@@ -1,0 +1,129 @@
+# Builds the public firmware (firmware/redarc-camper.yaml) and publishes it for OTA updates.
+#
+# Release: push a tag like v2026.11.1. The unit's update entity reads
+#   https://raw.githubusercontent.com/<owner>/<repo>/ota/manifest.json
+# and the "ota" branch is replaced with the new manifest and image. The images are also
+# attached to a GitHub release.
+#
+# Run it by hand (Actions -> Firmware -> Run workflow) to test a build without publishing.
+
+name: Firmware
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firmware
+  cancel-in-progress: false
+
+env:
+  ESPHOME_VERSION: "2026.10.2"
+  CONFIG: firmware/redarc-camper.yaml
+  NAME: redarc-camper
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache ESP-IDF toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/esphome
+          key: esphome-${{ env.ESPHOME_VERSION }}
+
+      - name: Install ESPHome
+        run: pip install "esphome==${ESPHOME_VERSION}"
+
+      - name: Version
+        id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build web UI (generic icons)
+        run: |
+          python3 web/build.py
+          cp web/redarc_ui.js firmware/
+
+      - name: Compile
+        run: |
+          esphome -s version "${{ steps.v.outputs.version }}" -s ref "${{ steps.v.outputs.ref }}" \
+            compile "$CONFIG" 2>&1 | tee build.log
+          grep -E "^(RAM|Flash):|app partition" build.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Collect images
+        id: img
+        run: |
+          set -e
+          ota=$(find firmware/.esphome/build/$NAME -name firmware.ota.bin | head -1)
+          factory=$(find firmware/.esphome/build/$NAME -name firmware.factory.bin | head -1)
+          test -f "$ota"
+          v="${{ steps.v.outputs.version }}"
+          mkdir -p out
+          cp "$ota" "out/$NAME-$v.ota.bin"
+          [ -n "$factory" ] && cp "$factory" "out/$NAME-$v.factory.bin"
+          md5=$(md5sum "out/$NAME-$v.ota.bin" | cut -d' ' -f1)
+          python3 - "$v" "$md5" <<'PY'
+          import json, os, sys
+          v, md5 = sys.argv[1], sys.argv[2]
+          repo, name = os.environ["GITHUB_REPOSITORY"], os.environ["NAME"]
+          manifest = {
+              "name": "REDARC TVMS bridge",
+              "version": v,
+              "home_assistant_domain": "esphome",
+              "builds": [{
+                  "chipFamily": "ESP32-C6",
+                  "ota": {
+                      "path": f"{name}-{v}.ota.bin",
+                      "md5": md5,
+                      "release_url": f"https://github.com/{repo}/releases/tag/v{v}",
+                      "summary": f"redarc-rbus-esphome {v}",
+                  },
+                  "parts": [{"path": f"{name}-{v}.factory.bin", "offset": 0}],
+              }],
+          }
+          json.dump(manifest, open("out/manifest.json", "w"), indent=2)
+          PY
+          cat out/manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ steps.v.outputs.version }}
+          path: out/
+
+      - name: Publish to the ota branch
+        if: steps.v.outputs.publish == 'true'
+        run: |
+          cd out
+          git init -q -b ota
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Firmware ${{ steps.v.outputs.version }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ota
+
+      - name: GitHub release
+        if: steps.v.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.bin
+          generate_release_notes: true

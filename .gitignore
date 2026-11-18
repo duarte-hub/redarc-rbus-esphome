@@ -6,3 +6,7 @@ secrets.yaml
 # built from the RedVision app icons (REDARC artwork): generate locally with web/build.py
 web/redarc_ui.js
 .DS_Store
+
+# firmware build
+firmware/redarc_ui.js
+firmware/.esphome/

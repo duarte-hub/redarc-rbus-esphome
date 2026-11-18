@@ -1,0 +1,438 @@
+# Public firmware: REDARC TVMS bridge on a Seeed XIAO ESP32-C6 (external U.FL antenna).
+#
+# Built by .github/workflows/firmware.yml and published to the "ota" branch. A unit updates itself
+# from there: web UI Config page -> Firmware -> Check for update / Install & reboot.
+#
+# Nothing private is compiled in, so the binary can be public. Each unit keeps its own settings
+# in flash (NVS), which firmware updates leave alone:
+#   Wi-Fi          set over USB with Improv (web.esphome.io -> Connect -> Configure Wi-Fi).
+#                  A setup hotspot is not possible with Zigbee, and Improv over Bluetooth does
+#                  not fit in flash.
+#   API key        Home Assistant sets it when you add the device; OTA uploads then use the same key
+#   Display MAC    web UI Config page, or the "Display MAC" text entity
+#   Pairing        web UI Config page: Pair Now, then enter the code the Display shows
+#
+# Build locally: python3 web/build.py && cp web/redarc_ui.js firmware/ && esphome compile firmware/redarc-camper.yaml
+
+substitutions:
+  name: redarc-camper
+  friendly_name: REDARC Battery
+  version: dev          # CI sets the release version (tag without the leading "v")
+  ref: main             # git ref the components are fetched from; CI sets the release tag
+  manifest_url: https://raw.githubusercontent.com/duarte-hub/redarc-rbus-esphome/ota/manifest.json
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  project:
+    name: duarte-hub.redarc-rbus-esphome
+    version: ${version}
+  on_boot:
+    - priority: 800
+      then:
+        # XIAO ESP32-C6: enable the RF switch, wait for it to power up,
+        # then select the external U.FL antenna before Wi-Fi/BLE start.
+        - output.turn_off: rf_switch_power
+        - delay: 100ms
+        - output.turn_on: rf_ant_select
+    - priority: -100
+      then:
+        # Point the BLE client at the Display saved on this unit.
+        - lambda: |-
+            if (!id(display_mac).state.empty())
+              id(redarc_hub_1).set_remote_mac(id(display_mac).state);
+
+esp32:
+  board: seeed_xiao_esp32c6
+  flash_size: 4MB
+  variant: esp32c6
+  partitions: partitions.csv
+  framework:
+    type: esp-idf
+    advanced:
+      # Keep a crash dump in the coredump partition so the next panic leaves a backtrace.
+      include_builtin_idf_components: [espcoredump]
+    sdkconfig_options:
+      CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH: y
+      CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF: y
+
+debug:
+  update_interval: 5min
+logger:
+  level: WARN
+
+api:
+  # No key in the firmware: Home Assistant provisions one, which is kept in flash.
+  encryption: {}
+  # Don't restart the ESP when Home Assistant is down: every restart is a BLE reconnect.
+  reboot_timeout: 0s
+
+ota:
+  # Pushes from ESPHome authenticate with the provisioned API key.
+  - platform: esphome
+  # Updates pulled from GitHub Pages (update entity below).
+  - platform: http_request
+
+http_request:
+  verify_ssl: true
+
+update:
+  - platform: http_request
+    id: firmware_update
+    name: "TVMS 1 Firmware"
+    source: ${manifest_url}
+    update_interval: 12h
+
+wifi:
+  # No network in the firmware: the one set over Improv is kept in flash.
+  # Single AP with a strong signal: periodic roaming scans only steal airtime from BLE/API.
+  post_connect_roaming: false
+  reboot_timeout: 5min
+  enable_rrm: false
+  fast_connect: false
+  enable_btm: false
+
+# Wi-Fi setup for a new unit over USB (ESPHome does not allow a fallback hotspot with Zigbee).
+improv_serial:
+
+web_server:
+  port: 80
+  version: 2
+  js_include: redarc_ui.js
+  js_url: ""
+  # No unauthenticated firmware upload on the LAN; updates come from GitHub or ESPHome.
+  ota: false
+
+output:
+  - platform: gpio
+    pin:
+      number: GPIO15
+      inverted: true
+    id: onboard_blue_led
+  # GPIO3 LOW enables the RF switch; GPIO14 HIGH selects the external antenna.
+  - platform: gpio
+    pin: GPIO3
+    id: rf_switch_power
+  - platform: gpio
+    pin: GPIO14
+    id: rf_ant_select
+
+zigbee:
+  router: false
+
+external_components:
+  - source: github://duarte-hub/redarc-rbus-esphome@${ref}
+    components: [redarc_rbus, zigbee_link]
+    refresh: 0s
+
+esp32_ble_tracker:
+  # Low scan duty cycle: the ESP32 shares one radio between Wi-Fi and BLE.
+  scan_parameters:
+    active: false
+    interval: 320ms
+    window: 30ms
+
+esp32_ble:
+  io_capability: keyboard_only
+
+ble_client:
+  # Placeholder: the real address is the "Display MAC" saved on the unit (applied at boot).
+  - mac_address: "00:00:00:00:00:00"
+    id: redarc_display_1
+
+text:
+  - platform: template
+    name: "TVMS 1 Display MAC"
+    id: display_mac
+    mode: text
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    max_length: 17
+    entity_category: config
+    set_action:
+      - lambda: id(redarc_hub_1).set_remote_mac(x);
+
+sensor:
+  - platform: zigbee_link
+    rssi:
+      name: "TVMS 1 Zigbee Signal"
+    lqi:
+      name: "TVMS 1 Zigbee LQI"
+  - platform: redarc_rbus
+    id: redarc_hub_1
+    ble_client_id: redarc_display_1
+    status_led: GPIO2
+    # 0ms = don't ask the Display to change the BLE connection interval (75ms default stopped
+    # telemetry on this unit).
+    connection_interval: 0ms
+    state_of_charge:
+      name: "TVMS 1 Battery SoC"
+    voltage:
+      name: "TVMS 1 Battery Voltage"
+    rssi:
+      name: "TVMS 1 BLE Signal"
+    disconnects:
+      name: "TVMS 1 BLE Disconnects"
+    pairing_requests:
+      name: "TVMS 1 Pairing Requests"
+    current:
+      name: "TVMS 1 Battery Current"
+    battery_power:
+      name: "TVMS 1 Battery Power"
+    temperature:
+      name: "TVMS 1 Battery Temperature"
+    state_of_health:
+      name: "TVMS 1 Battery State of Health"
+    time_remaining:
+      name: "TVMS 1 Battery Time Remaining"
+    load_current:
+      name: "TVMS 1 Load Current"
+    solar_voltage:
+      name: "TVMS 1 Solar Voltage"
+    solar_current:
+      name: "TVMS 1 Solar Current"
+    solar_power:
+      name: "TVMS 1 Solar Power"
+    dc_input_voltage:
+      name: "TVMS 1 DC Input Voltage"
+    dc_input_current:
+      name: "TVMS 1 DC Input Current"
+    ac_input_voltage:
+      name: "TVMS 1 AC Input Voltage"
+    ac_input_current:
+      name: "TVMS 1 AC Input Current"
+    charger_output_voltage:
+      name: "TVMS 1 Charger Output Voltage"
+    charger_output_current:
+      name: "TVMS 1 Charger Output Current"
+    inverter_output_voltage:
+      name: "TVMS 1 Inverter Output Voltage"
+    inverter_power:
+      name: "TVMS 1 Inverter Power"
+    battery_capacity:
+      name: "TVMS 1 Battery Capacity"
+    battery_max_charge_current:
+      name: "TVMS 1 Battery Max Charge Current"
+    charger_max_output_current:
+      name: "TVMS 1 Charger Max Output Current"
+    low_battery_soc_setpoint:
+      name: "TVMS 1 Low Battery SoC Alarm Set Point"
+    low_battery_voltage_setpoint:
+      name: "TVMS 1 Low Battery Voltage Alarm Set Point"
+    load_disconnect_voltage_off:
+      name: "TVMS 1 Load Disconnect Voltage Off"
+    load_disconnect_voltage_on:
+      name: "TVMS 1 Load Disconnect Voltage On"
+    load_disconnect_soc_off:
+      name: "TVMS 1 Load Disconnect SoC Off"
+    load_disconnect_soc_on:
+      name: "TVMS 1 Load Disconnect SoC On"
+    solar_energy_today:
+      name: "TVMS 1 Solar Energy Today"
+    solar_energy_yesterday:
+      name: "TVMS 1 Solar Energy Yesterday"
+    soc_min_last_day:
+      name: "TVMS 1 Battery SoC Min (Last Day)"
+    soc_max_last_day:
+      name: "TVMS 1 Battery SoC Max (Last Day)"
+    analog_channels:
+      - channel: 17
+        name: "TVMS 1 Voltage Input 1"
+        unit_of_measurement: "V"
+        device_class: voltage
+        accuracy_decimals: 2
+        filters:
+          - multiply: 0.001
+      - channel: 18
+        name: "TVMS 1 Voltage Input 2"
+        unit_of_measurement: "V"
+        device_class: voltage
+        accuracy_decimals: 2
+        filters:
+          - multiply: 0.001
+      - channel: 21
+        name: "TVMS 1 Tank 1 Level"
+        unit_of_measurement: "%"
+      - channel: 22
+        name: "TVMS 1 Tank 2 Level"
+        unit_of_measurement: "%"
+
+  - platform: uptime
+    name: "ESP Uptime"
+  - platform: wifi_signal
+    name: "ESP WiFi Signal"
+    update_interval: 60s
+    entity_category: diagnostic
+
+binary_sensor:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    ac_input_active:
+      name: "TVMS 1 AC Input Active"
+    dc_input_active:
+      name: "TVMS 1 DC Input Active"
+    solar_input_active:
+      name: "TVMS 1 Solar Input Active"
+    charger_derating:
+      name: "TVMS 1 Charger Derating"
+    inverter_on:
+      name: "TVMS 1 Inverter On"
+    low_battery_soc_alarm:
+      name: "TVMS 1 Low Battery SoC Alarm"
+    low_battery_voltage_alarm:
+      name: "TVMS 1 Low Battery Voltage Alarm"
+    load_disconnect_active:
+      name: "TVMS 1 Load Disconnect Active"
+    fault_active:
+      name: "TVMS 1 Fault Active"
+    pairing_required:
+      name: "TVMS 1 Pairing Required"
+    digital_channels:
+      - channel: 1
+        name: "TVMS 1 Ignition"
+    io_alarms:
+      - channel: 21
+        name: "TVMS 1 Tank 1 Alarm"
+      - channel: 22
+        name: "TVMS 1 Tank 2 Alarm"
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "ESP Reset Reason"
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    charging_stage:
+      name: "TVMS 1 Charging Stage"
+    charging_mode:
+      name: "TVMS 1 Charging Mode"
+    battery_chemistry:
+      name: "TVMS 1 Battery Chemistry"
+    dc_input_trigger:
+      name: "TVMS 1 DC Input Trigger"
+    load_disconnect_trigger:
+      name: "TVMS 1 Load Disconnect Trigger"
+    channel_names:
+      name: "TVMS 1 Channel Names"
+    # Faults reported by any device, in the RedVision app's wording.
+    active_faults:
+      name: "TVMS 1 Active Faults"
+    link_status:
+      name: "TVMS 1 BLE Link Status"
+    last_disconnect:
+      name: "TVMS 1 BLE Last Disconnect"
+    last_pairing:
+      name: "TVMS 1 BLE Last Pairing"
+    # History logs from the Display ("newest,...,oldest"), refreshed every 15 min.
+    soc_hourly_log:
+      name: "TVMS 1 SoC Hourly Log"
+    soc_daily_min_log:
+      name: "TVMS 1 SoC Daily Min Log"
+    soc_daily_max_log:
+      name: "TVMS 1 SoC Daily Max Log"
+    solar_daily_log:
+      name: "TVMS 1 Solar Daily Log"
+    channel_status:
+      - channel: 7
+        name: "TVMS 1 Main Light Status"
+
+switch:
+  # Output channels of this system ("Read Channel Names" lists yours).
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Tent Light"
+    channel: 4
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Left Light"
+    channel: 5
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Front Light"
+    channel: 6
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Main Light"
+    channel: 7
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Right Light"
+    channel: 8
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Compressor"
+    channel: 9
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Fridge"
+    channel: 10
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Water Pump"
+    channel: 11
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Stereo & 2-way"
+    channel: 12
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Accessories"
+    channel: 13
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Inverter"
+    channel: 14
+  # Channel 15 is the system's Master Switch; off turns the switched loads off.
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    name: "TVMS 1 Master Switch"
+    channel: 15
+
+select:
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    charging_mode:
+      name: "TVMS 1 Charging Mode"
+    dc_input_trigger:
+      name: "TVMS 1 DC Input Trigger"
+
+number:
+  - platform: template
+    name: "TVMS 1 Pairing Code"
+    id: redarc_passkey_input_1
+    min_value: 0
+    max_value: 999999
+    step: 1
+    mode: box
+    optimistic: true
+    restore_value: true
+    set_action:
+      - lambda: |-
+          id(redarc_hub_1).set_passkey((uint32_t) x);
+
+button:
+  - platform: template
+    name: "TVMS 1 Check for Update"
+    entity_category: config
+    on_press:
+      - component.update: firmware_update
+  # Reads the output names stored in the system (same sequence as the RedVision app);
+  # telemetry pauses ~6 s. Result: "TVMS 1 Channel Names" sensor and the log.
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    read_channel_names:
+      name: "TVMS 1 Read Channel Names"
+  - platform: redarc_rbus
+    redarc_rbus_id: redarc_hub_1
+    sync_soc_full:
+      name: "TVMS 1 Sync Battery SoC to 100%"
+  - platform: template
+    name: "TVMS 1 Pair Now"
+    on_press:
+      - lambda: |-
+          id(redarc_hub_1).pair_now();
+  - platform: template
+    name: "TVMS 1 Zigbee Pair"
+    on_press:
+      - zigbee.factory_reset

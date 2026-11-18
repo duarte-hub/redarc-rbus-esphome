@@ -22,8 +22,29 @@
     return '<svg class="' + (cls || '') + '" width="' + size + '" height="' + size +
       '" viewBox="0 0 24 24" fill="currentColor"><path d="' + MI[name] + '"/></svg>';
   }
+  // Generic icons (Google Material Icons, Apache-2.0; see licenses/). build.py can swap in your
+  // own set; none are needed for the public firmware.
+  var GEN = {
+    light: 'M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6C7.8 12.16 7 10.63 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z',
+    power12: 'M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z',
+    power240: 'M16 7V3h-2v4h-4V3H8v4h-.01C6.9 6.99 6 7.89 6 8.98v5.52L9.5 18v3h5v-3l3.5-3.51v-5.5c0-1.1-.9-2-2-2z',
+    plug: 'M16 7V3h-2v4h-4V3H8v4h-.01C6.9 6.99 6 7.89 6 8.98v5.52L9.5 18v3h5v-3l3.5-3.51v-5.5c0-1.1-.9-2-2-2z',
+    compressor: 'M14.5 17c0 1.65-1.35 3-3 3s-3-1.35-3-3h2c0 .55.45 1 1 1s1-.45 1-1-.45-1-1-1H2v-2h9.5c1.65 0 3 1.35 3 3zM19 6.5C19 4.57 17.43 3 15.5 3S12 4.57 12 6.5h2c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S16.33 8 15.5 8H2v2h13.5c1.93 0 3.5-1.57 3.5-3.5zm-.5 4.5H2v2h16.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5v2c1.93 0 3.5-1.57 3.5-3.5S20.43 11 18.5 11z',
+    fridge: 'M18 2.01L6 2c-1.1 0-2 .89-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.11-.9-1.99-2-1.99zM18 20H6v-9.02h12V20zm0-11H6V4h12v5zM8 5h2v3H8zm0 7h2v5H8z',
+    stereo: 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z',
+    speaker: 'M17 2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 1.99 2 1.99L17 22c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-5 2c1.1 0 2 .9 2 2s-.9 2-2 2c-1.11 0-2-.9-2-2s.89-2 2-2zm0 16c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
+    tap: 'M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z',
+    heater: 'M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67z',
+    fan: 'M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm.5-9c4.5 0 4.61 3.57 2.25 4.75-.99.49-1.43 1.54-1.62 2.47.48.2.9.51 1.22.91 3.7-2 7.68-1.21 7.68 2.37 0 4.5-3.57 4.6-4.75 2.25-.5-.99-1.56-1.43-2.49-1.62-.2.48-.51.89-.91 1.22 2.01 3.7 1.21 7.67-2.37 7.67-4.49 0-4.59-3.57-2.24-4.75.98-.49 1.42-1.53 1.62-2.45-.49-.2-.92-.52-1.24-.92C5.96 15.92 2 15.13 2 11.56 2 7.06 5.56 6.96 6.74 9.31c.5.99 1.56 1.43 2.49 1.62.19-.48.51-.9.91-1.22C8.13 6.03 8.92 2 12.5 2z',
+    usb: 'M15 7v4h1v2h-3V5h2l-3-4-3 4h2v8H8v-2.07c.7-.37 1.2-1.08 1.2-1.93 0-1.21-.99-2.2-2.2-2.2-1.21 0-2.2.99-2.2 2.2 0 .85.5 1.56 1.2 1.93V13c0 1.11.89 2 2 2h3v3.05c-.71.37-1.2 1.1-1.2 1.95 0 1.22.99 2.2 2.2 2.2 1.21 0 2.2-.98 2.2-2.2 0-.85-.49-1.58-1.2-1.95V15h3c1.11 0 2-.89 2-2v-2h1V7h-4z',
+    output: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z',
+    temp: 'M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z',
+    car: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z',
+    sun: 'M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z'
+  };
   function ic(name, size, cls) {
-    var s = ICONS[name] || ICONS.output || '<svg viewBox="0 0 24 24"></svg>';
+    var g = GEN[name] || GEN.output;
+    var s = ICONS[name] || '<svg viewBox="0 0 24 24" fill="currentColor"><path d="' + g + '"/></svg>';
     return s.replace('<svg ', '<svg class="' + (cls || '') + '" width="' + size + '" height="' + size + '" ');
   }
   // REDARC display unit (green outline), as in the app's header.
@@ -44,6 +65,7 @@
   var drawer = false;
   var chart = { metric: 'soc', per: 'hour' };
   var toast = '', toastT = 0;
+  var fw = {};             // firmware update: cur (running version), url (release notes)
 
   function onState(d) {
     var id = d.name_id || d.id;
@@ -55,6 +77,13 @@
     e.value = d.value;
     if (prefix === null && /battery so[ch]$/i.test(name)) prefix = name.replace(/battery so[ch]$/i, '');
     e.short = prefix ? name.replace(prefix, '') : name;
+    if (dom === 'update' && fw.cur === undefined) {
+      fw.cur = '';
+      fetch('/update/' + encodeURIComponent(name) + '?detail=all')
+        .then(function (r) { return r.json(); })
+        .then(function (j) { fw.cur = j.current_version || ''; fw.url = j.release_url || ''; schedule(); })
+        .catch(function () { fw.cur = undefined; });
+    }
     if (dom === 'select' && !opts[name]) {
       opts[name] = [];
       fetch('/select/' + encodeURIComponent(name) + '?detail=all')
@@ -254,7 +283,7 @@
       var e = ents[k];
       if (e.domain !== 'switch' || /master|main power|^vpn /i.test(e.short)) continue;
       var onn = e.value === true || e.state === 'ON', ico = iconFor(e.short);
-      var letter = ico === 'light' ? '<i class="ltr">' + esc(e.short.charAt(0).toUpperCase()) + '</i>' : '';
+      var letter = ico === 'light' ? '<i class="ltr' + (ICONS.light ? '' : ' gen') + '">' + esc(e.short.charAt(0).toUpperCase()) + '</i>' : '';
       h += '<button class="tile' + (onn ? ' on' : '') + '" data-act="sw" data-n="' + esc(e.name) + '"><span class="ico">' +
         ic(ico, 84) + letter + '</span><span class="nm">' + esc(e.short) + '</span></button>';
     }
@@ -337,7 +366,7 @@
       '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button></div>' +
       '<p class="mut zbn">Zigbee Pair makes the ESP leave its current Zigbee network and search for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p></aside>';
   }
-  var zbArm = false, zbT = 0, rsArm = false, rsT = 0;
+  var zbArm = false, zbT = 0, rsArm = false, rsT = 0, fwArm = false, fwT = 0;
 
   /* ------------------------------------------------------------- ESP config */
   function fmtUp(s) {
@@ -362,7 +391,26 @@
       crows([['Wi-Fi signal', /wifi (signal|rssi)/i, 'sensor']]) +
       '<button class="big-btn rs' + (rsArm ? ' arm' : '') + '" data-act="restart">' + (rsArm ? 'Tap again to restart' : 'Restart ESP') + '</button>');
 
-    var disp = crows([
+    var upd = null;
+    for (var k in ents) if (ents[k].domain === 'update') { upd = ents[k]; break; }
+    if (upd) {
+      var st = String(upd.state || '').toUpperCase(), latest = upd.value || '';
+      var avail = /AVAILABLE/.test(st), busy = /INSTALLING/.test(st);
+      var chk = find(/check for update/i, 'button');
+      h += cardc('Firmware', crow('Running', fw.cur || '--') + crow('Latest', latest || '--') +
+        crow('Status', busy ? 'Installing… the unit reboots when done' : avail ? 'Update available' : st ? 'Up to date' : '--') +
+        (fw.url ? '<p class="mut zbn"><a href="' + esc(fw.url) + '" target="_blank" rel="noopener">Release notes</a></p>' : '') +
+        '<div class="pbtn">' +
+        (chk ? '<button class="big-btn zb" data-act="btn" data-n="' + esc(chk.name) + '">Check for update</button>' : '') +
+        (avail && !busy ? '<button class="big-btn' + (fwArm ? ' rs arm' : '') + '" data-act="fwinstall" data-n="' + esc(upd.name) + '">' +
+          (fwArm ? 'Tap again to install' : 'Install &amp; reboot') + '</button>' : '') +
+        '</div>');
+    }
+
+    var mac = find(/display mac/i, 'text');
+    var disp = (mac ? crow('Display MAC', mac.state || 'not set') +
+      '<div class="srow keyrow"><input id="macin" autocomplete="off" autocapitalize="characters" placeholder="AA:BB:CC:DD:EE:FF">' +
+      '<button class="sm" data-act="mac" data-n="' + esc(mac.name) + '">Set</button></div>' : '') + crows([
       ['Link', /link status/i, 'text_sensor'], ['Bluetooth signal', /ble (signal|rssi)/i, 'sensor'],
       ['Disconnects', /ble disconnects/i, 'sensor'], ['Last disconnect', /last disconnect/i, 'text_sensor'],
       ['Last pairing', /last pairing/i, 'text_sensor'], ['Pairing requests', /pairing requests/i, 'sensor'],
@@ -403,7 +451,7 @@
   /* --------------------------------------------------------------- render */
   // last = '' forces a full re-render; lastBody is what <main> currently holds.
   var last = '', lastBody = '', pend = 0, root, fresh = false;
-  var ptrDown = false, missed = false, vkeyVal = '';
+  var ptrDown = false, missed = false, vkeyVal = '', macVal = '';
   document.addEventListener('pointerdown', function () { ptrDown = true; });
   // A touch scroll ends in pointercancel. Only catch up if a render was held back while the
   // pointer was down: forcing one here replaced <main> mid-swipe and stopped the scroll.
@@ -423,6 +471,7 @@
   }
   document.addEventListener('input', function (ev) {
     if (ev.target.id === 'vpnkey') { vkeyVal = ev.target.value; return; }
+    if (ev.target.id === 'macin') { macVal = ev.target.value; return; }
     if (ev.target.id !== 'code') return;
     codeVal = ev.target.value.replace(/\D/g, '').slice(0, 6);
     if (codeVal.length === 6) sendCode();   // the Display only waits a few seconds: send on the 6th digit
@@ -466,6 +515,8 @@
     if (force || body !== lastBody) { m.innerHTML = body; lastBody = body; }
     var vk = document.getElementById('vpnkey');
     if (vk && vkeyVal) vk.value = vkeyVal;
+    var mi2 = document.getElementById('macin');
+    if (mi2 && macVal) mi2.value = macVal;
   }
 
   document.addEventListener('click', function (ev) {
@@ -510,6 +561,22 @@
           .then(function (r) { say(r.ok ? 'Zigbee pairing started. Now allow joining in Zigbee2MQTT or ZHA.' : 'This firmware has no Zigbee Pair button.'); })
           .catch(function () { say('Could not reach the unit.'); });
       }
+    } else if (a === 'fwinstall') {
+      if (!fwArm) {
+        fwArm = true; clearTimeout(fwT);
+        fwT = setTimeout(function () { fwArm = false; last = ''; schedule(); }, 5000);
+      } else {
+        fwArm = false; clearTimeout(fwT);
+        post('update', n, 'install')
+          .then(function (r) { say(r.ok ? 'Downloading the update. The unit reboots when it is installed; this page reconnects after about a minute.' : 'Could not start the update.'); })
+          .catch(function () { say('Could not reach the unit.'); });
+      }
+    } else if (a === 'mac') {
+      var mel = document.getElementById('macin'), mv = (macVal || (mel && mel.value) || '').trim().toUpperCase();
+      if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mv)) say('Enter the MAC as AA:BB:CC:DD:EE:FF.');
+      else post('text', n, 'set', '?value=' + encodeURIComponent(mv))
+        .then(function (r) { macVal = ''; if (mel) mel.value = ''; say(r.ok ? 'Display MAC saved. Connecting to it now.' : 'Could not set the MAC.'); })
+        .catch(function () { say('Could not reach the unit.'); });
     } else if (a === 'code') {
       sendCode();
     }
@@ -559,7 +626,7 @@
     '.rows{padding:10px 20px}.row{display:flex;align-items:center;gap:20px;padding:20px 0;font-size:22px}.row span{flex:1}.row b{font-weight:300;font-size:36px}.row svg{flex:none}' +
     '.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px 16px;padding:4px 2px}.tile{background:var(--card);border-radius:20px;box-shadow:var(--sh);height:172px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-size:23px;padding:8px;border:1px solid transparent}' +
     '.tile.on{background:linear-gradient(135deg,var(--g2),var(--g));color:#fff;font-weight:600;border-color:rgba(255,255,255,.35);box-shadow:0 4px 14px rgba(139,195,74,.35)}' +
-    '.ico{position:relative;display:grid;place-items:center;height:84px}.ltr{position:absolute;top:12px;left:0;right:0;text-align:center;font-style:normal;font-size:19px;color:#212121;line-height:1}.tile.on .ltr{color:#4CAF50}' +
+    '.ico{position:relative;display:grid;place-items:center;height:84px}.ltr{position:absolute;top:12px;left:0;right:0;text-align:center;font-style:normal;font-size:19px;color:#212121;line-height:1}.tile.on .ltr{color:#4CAF50}.ltr.gen{top:27px;font-size:15px;color:var(--tx)}.tile.on .ltr.gen{color:#fff}' +
     '.sel{display:flex;justify-content:space-between;gap:36px;padding:20px 8px 8px}.sel select{flex:1;background:none;border:0;border-bottom:1px solid var(--mut);font-size:23px;padding:8px 0;appearance:none;-webkit-appearance:none;' +
     'background:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'10\'%3E%3Cpath d=\'M0 0h20L10 10z\' fill=\'%23bdbdbd\'/%3E%3C/svg%3E") right 4px center no-repeat}.sel select:last-child{flex:.8}' +
     '.sel option{background:#212121;color:#fff}' +

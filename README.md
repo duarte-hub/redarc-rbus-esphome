@@ -367,16 +367,18 @@ endorsed by REDARC. No REDARC firmware or app binaries are redistributed here.
 ## RedVision-style web page (optional)
 
 `web/` holds a replacement for ESPHome's built-in web page that looks like the RedVision phone
-app (Home, Controls and Charts tabs, plus a menu with Pair Now and the Wi-Fi / Bluetooth signal
-strength). It reads live values from the node's `/events` stream, so it needs no extra firmware
-code, and entities that are not in your config are simply left out.
-
-The page uses the app's own icons. Those are REDARC's artwork, so they are not in this repo:
-extract `assets/flutter_assets/assets/` from an APK you have, then
+app (Home, Controls, Charts and Config tabs, plus a menu with Pair Now and the Wi-Fi / Bluetooth
+signal strength). It reads live values from the node's `/events` stream, so it needs no extra
+firmware code, and entities that are not in your config are simply left out.
 
 ```
-python3 web/build.py path/to/assets/flutter_assets/assets   # writes web/redarc_ui.js
+python3 web/build.py        # writes web/redarc_ui.js with generic Material Icons
 ```
+
+For a private build you can use the app's own icons instead. Those are REDARC's artwork, so they
+are not in this repo and must never go into a published firmware: extract
+`assets/flutter_assets/assets/` from an APK you have and run
+`python3 web/build.py path/to/assets/flutter_assets/assets`.
 
 Copy `redarc_ui.js` next to your device yaml and point the web server at it:
 
@@ -390,6 +392,33 @@ web_server:
 
 To preview without a device, run `python3 -m http.server` in `web/` and open `dev.html`
 (`mock.js` fakes the node).
+
+## Public firmware and updates from GitHub
+
+`firmware/redarc-camper.yaml` is a complete firmware for a Seeed XIAO ESP32-C6 with nothing
+private compiled in, so the binary is public. Pushing a tag like `v2026.11.1` runs
+`.github/workflows/firmware.yml`, which builds it and publishes `manifest.json` and the image to
+the `ota` branch (served from `raw.githubusercontent.com`) and to a GitHub release.
+
+A unit checks the manifest every 12 hours. The web page's Config tab shows the running and latest
+version with **Check for update** and **Install & reboot**; Home Assistant shows the same update
+entity. The unit downloads the image over HTTPS, checks its MD5 and reboots into it.
+
+Each unit keeps its own settings in flash (NVS), which updates leave alone:
+
+| Setting | How it is set |
+|---|---|
+| Wi-Fi | USB Improv on a new unit (web.esphome.io, *Connect*, *Configure Wi-Fi*). A setup hotspot is not allowed together with Zigbee. |
+| API key | Home Assistant provisions it when the device is added; ESPHome OTA uploads then use it too. |
+| Display MAC | Config tab, or the *Display MAC* text entity |
+| Pairing | Config tab: *Pair Now*, then the code the Display shows (the bond is kept in flash) |
+
+To move a unit that runs a private build (Wi-Fi, key and MAC compiled in), install
+`firmware/migrate.example.yaml` once from ESPHome: it saves those settings into flash, after
+which *Install & reboot* switches it to the GitHub firmware.
+
+Flash is the limit: with HTTPS updates the image fills 99% of a 1.875 MB app slot on a 4 MB
+board. Adding features needs an 8 MB board.
 
 ## Zigbee (optional, ESP32-C6/H2)
 
