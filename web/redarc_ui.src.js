@@ -401,11 +401,16 @@
   function p6(n) { n = String(Math.round(n)); return ('000000' + n).slice(-6); }
 
   /* --------------------------------------------------------------- render */
-  var last = '', pend = 0, root, fresh = false;
-  var ptrDown = false, vkeyVal = '';
+  // last = '' forces a full re-render; lastBody is what <main> currently holds.
+  var last = '', lastBody = '', pend = 0, root, fresh = false;
+  var ptrDown = false, missed = false, vkeyVal = '';
   document.addEventListener('pointerdown', function () { ptrDown = true; });
+  // A touch scroll ends in pointercancel. Only catch up if a render was held back while the
+  // pointer was down: forcing one here replaced <main> mid-swipe and stopped the scroll.
   ['pointerup', 'pointercancel'].forEach(function (t) {
-    document.addEventListener(t, function () { setTimeout(function () { ptrDown = false; last = ''; schedule(); }, 0); });
+    document.addEventListener(t, function () {
+      setTimeout(function () { ptrDown = false; if (missed) { missed = false; schedule(); } }, 0);
+    });
   });
   // Digits typed into the pairing box live here, so a re-render (which replaces the input when
   // it loses focus on the Set tap) cannot wipe them before they are sent.
@@ -425,20 +430,42 @@
   function schedule() { if (!pend) pend = requestAnimationFrame(render); }
   function render() {
     pend = 0;
-    if (ptrDown) return;   // a re-render between press and release would swallow the tap
+    if (ptrDown) { missed = true; return; }   // a re-render between press and release would swallow the tap
     var body = tab === 'home' ? home() : tab === 'controls' ? controls() : tab === 'config' ? cfg() : charts();
-    var html = header() + '<main class="' + tab + '">' + body + '</main>' + nav() + (drawer ? side() : '') +
+    var html = header() + '<main class="' + tab + '"></main>' + nav() + (drawer ? side() : '') +
       (toast ? '<div class="toast">' + esc(toast) + '</div>' : '');
-    if (html === last) return;
-    var sc = root.querySelector('main') && !fresh ? root.querySelector('main').scrollTop : 0, ae = document.activeElement;
-    fresh = false;
+    var force = last === '';
+    if (!force && html === last && body === lastBody) return;
+    var ae = document.activeElement;
     if (ae && (ae.tagName === 'SELECT' || ae.tagName === 'INPUT')) return;   // do not yank an open control
-    last = html;
-    root.innerHTML = html;
+    // Keep the <main> scroller itself alive and only swap its contents: replacing the element
+    // under a finger ends the touch scroll (live sensor updates arrive several times a second).
+    var m = root.querySelector('main');
+    if (html !== last) {
+      var keep = m && !fresh && m.className === tab ? m : null;
+      if (keep) {
+        // swap the header, nav and overlays around <main> without detaching it (a detached
+        // element loses its scroll position)
+        var tmp = document.createElement('div'), after = false;
+        tmp.innerHTML = html;
+        var nm = tmp.querySelector('main');
+        Array.prototype.slice.call(root.childNodes).forEach(function (k) { if (k !== keep) root.removeChild(k); });
+        Array.prototype.slice.call(tmp.childNodes).forEach(function (n) {
+          if (n === nm) after = true;
+          else if (after) root.appendChild(n);
+          else root.insertBefore(n, keep);
+        });
+      } else {
+        root.innerHTML = html;
+        m = root.querySelector('main');
+        lastBody = null;   // a new, empty <main>
+      }
+      last = html;
+    }
+    fresh = false;
+    if (force || body !== lastBody) { m.innerHTML = body; lastBody = body; }
     var vk = document.getElementById('vpnkey');
     if (vk && vkeyVal) vk.value = vkeyVal;
-    var m = root.querySelector('main');
-    if (m) m.scrollTop = sc;
   }
 
   document.addEventListener('click', function (ev) {
