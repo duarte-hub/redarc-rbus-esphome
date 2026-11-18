@@ -527,6 +527,10 @@ void RedarcRbus::set_remote_mac(const std::string &mac) {
     return;
   ESP_LOGI(TAG, "Target MAC set to %s; connecting on next advertisement", mac.c_str());
   this->parent()->set_address(addr);
+  // setup() looked for a bond against the old address (the placeholder when the MAC comes
+  // from flash at boot), so look again for the new one.
+  if (this->setup_done_)
+    this->esp_bonded_ = this->esp_has_bond_();
   this->parent()->set_state(espbt::ClientState::IDLE);  // let the tracker re-promote it
 }
 
