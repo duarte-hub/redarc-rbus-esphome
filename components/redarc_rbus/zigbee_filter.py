@@ -18,6 +18,8 @@ from esphome.const import CONF_NAME
 _LOGGER = logging.getLogger(__name__)
 
 # Entity names (regex, case-insensitive, searched anywhere in the name) that stay on Zigbee.
+# The first release's list. These keep the endpoints they had then: numbered in config order
+# from 1 per kind (analog inputs, binary inputs, switches), as ESPHome did on its own.
 ZIGBEE_EXPOSE = [
     r"battery so[ch]$",
     r"battery voltage$",
@@ -26,23 +28,30 @@ ZIGBEE_EXPOSE = [
     r"battery temperature$",
     r"time remaining$",
     r"solar power$",
+    r"tank \d level$",
+    r"fault active$",
+    r"wifi (signal|rssi)",
+    r"ble (signal|rssi)",
+]
+# Added later. ESPHome numbers unpinned endpoints in config order, so adding one in the middle
+# shifts every later endpoint and Zigbee2MQTT / ZHA then show the wrong reading on existing
+# entities. These are numbered after the original ones instead (from NEW_BASE, in config order).
+ZIGBEE_EXPOSE_ADDED = [
     r"solar (voltage|current)$",
     r"(ac|dc|solar) input active$",
     r"(ac|dc) input (voltage|current)$",
     r"charger output current$",
     r"load current$",
     r"inverter (on|power)$",
-    r"tank \d level$",
-    r"fault active$",
-    r"wifi (signal|rssi)",
-    r"ble (signal|rssi)",
 ]
+NEW_BASE = {"validate_sensor_esp32": 12, "validate_binary_sensor_esp32": 2}
 # Entity kinds that are always exposed whatever their name (the control switches).
 EXPOSE_ALL = {"validate_switch_esp32"}
 
 # Never on Zigbee, even if they are switches (the Tailscale VPN toggle and friends).
 _NEVER = re.compile(r"(^|\s)vpn\b", re.IGNORECASE)
 _PATTERNS = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE]
+_ADDED = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED]
 _installed = False
 
 
@@ -56,9 +65,22 @@ def _wrap(zigbee, fn_name):
         name = config.get(CONF_NAME) or ""
         if _NEVER.search(name):
             return config
+        group = "orig"
         if fn_name not in EXPOSE_ALL:
-            if not any(p.search(name) for p in _PATTERNS):
+            if any(p.search(name) for p in _PATTERNS):
+                group = "orig"
+            elif any(p.search(name) for p in _ADDED):
+                group = "added"
+            else:
                 return config  # not registered with Zigbee; still a normal ESPHome entity
+        if config.get("endpoint") is None:
+            # Per-run counters ((kind, group) -> next endpoint); CORE.data is reset every run.
+            from esphome.core import CORE
+            nxt = CORE.data.setdefault("redarc_rbus_zigbee_ep", {})
+            key = (fn_name, group)
+            ep = nxt.get(key, NEW_BASE.get(fn_name, 1) if group == "added" else 1)
+            nxt[key] = ep + 1
+            config["endpoint"] = ep
         return original(config, *args, **kwargs)
 
     setattr(zigbee, fn_name, filtered)
