@@ -141,6 +141,7 @@ text:
 
 sensor:
   - platform: zigbee_link
+    id: zigbee_link_sensors
     rssi:
       name: "TVMS 1 Zigbee Signal"
     lqi:
@@ -434,6 +435,7 @@ button:
       - lambda: |-
           id(redarc_hub_1).pair_now();
   - platform: template
+    id: zigbee_pair_button
     name: "TVMS 1 Zigbee Pair"
     on_press:
       - zigbee.factory_reset
