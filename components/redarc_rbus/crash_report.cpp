@@ -1,6 +1,7 @@
 #include "crash_report.h"
 
 #include <cstdio>
+#include <cstring>
 #include "esphome/core/defines.h"
 
 #if defined(USE_ESP32) && __has_include(<esp_core_dump.h>)
@@ -31,6 +32,26 @@ std::string last_crash_summary() {
 #endif
   n += snprintf(buf + n, sizeof(buf) - n, " elf=%.8s", (const char *) s->app_elf_sha256);
   std::string out(buf, n > 0 && n < (int) sizeof(buf) ? n : sizeof(buf) - 1);
+#if defined(__riscv)
+  // Code addresses found on the crashing task's stack: candidate callers for addr2line
+  {
+    std::string bt;
+    int found = 0;
+    const uint32_t size = s->exc_bt_info.dump_size;
+    for (uint32_t i = 0; i + 4 <= size && i + 4 <= sizeof(s->exc_bt_info.stackdump) && found < 12; i += 4) {
+      uint32_t w;
+      memcpy(&w, s->exc_bt_info.stackdump + i, 4);
+      if (w >= 0x42000000 && w < 0x44000000) {
+        char a[12];
+        snprintf(a, sizeof(a), " %08lx", (unsigned long) w);
+        bt += a;
+        found++;
+      }
+    }
+    if (!bt.empty())
+      out += " stack:" + bt;
+  }
+#endif
   char reason[160];
   if (esp_core_dump_get_panic_reason(reason, sizeof(reason)) == ESP_OK) {
     out += " reason=";

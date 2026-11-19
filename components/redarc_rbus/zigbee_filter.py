@@ -77,7 +77,7 @@ EXPOSE_ALL = {"validate_switch_esp32"}
 _NEVER = re.compile(r"(^|\s)vpn\b", re.IGNORECASE)
 _PATTERNS = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE]
 _ADDED = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED]
-_ADDED_2 = []  # DIAG: [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED_2]
+_ADDED_2 = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED_2]
 _BASES = {"orig": {}, "added": NEW_BASE, "added2": NEW_BASE_2}
 _installed = False
 
@@ -163,6 +163,9 @@ async def sync_to_code():
     zb_conf = CORE.config.get("zigbee")
     if not entries or not zb_conf:
         return
+    # A bigger stack for the Zigbee task (see zigbee_stack.cpp)
+    cg.add_build_flag("-Wl,--wrap=xTaskCreatePinnedToCore")
+    cg.add_build_flag("-Wl,--undefined=__wrap_xTaskCreatePinnedToCore")
     if isinstance(zb_conf, list):
         zb_conf = zb_conf[0]
     ns = cg.esphome_ns.namespace("redarc_rbus")
