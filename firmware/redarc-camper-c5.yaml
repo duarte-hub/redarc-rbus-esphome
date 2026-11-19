@@ -24,10 +24,12 @@ substitutions:
   version: dev          # CI sets the release version (tag without the leading "v")
   ref: main             # git ref the components are fetched from; CI sets the release tag
   manifest_url: https://raw.githubusercontent.com/duarte-hub/redarc-rbus-esphome/ota/manifest.json
-  # Onboard user LED (GPIO27, lights when driven low; ESPHome warns it is a strapping pin, which
-  # is fine for the board's own LED). For an external LED on D2 like the C6 unit: GPIO25, "false".
+  # Onboard user LED (GPIO27, lights when driven low). GPIO27 is a strapping pin, which is fine for
+  # the board's own LED, so its warning is turned off. For an external LED on D2 like the C6 unit:
+  # GPIO25, inverted "false", strapping "false".
   status_led_pin: GPIO27
   status_led_inverted: "true"
+  status_led_strapping: "true"
   # The C5 loses the Display about 1 s after asking it for new link timing before pairing.
   pairing_connection_params: "false"
 

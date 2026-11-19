@@ -44,9 +44,15 @@ bool ZigbeeSync::value_(const Entry &e, float &out) const {
     }
 #endif
 #ifdef USE_SWITCH
-    case KIND_SWITCH:
-      out = static_cast<switch_::Switch *>(e.entity)->state ? 1.0f : 0.0f;
+    case KIND_SWITCH: {
+      // An output switch has no state until the Display reports it; sending its default (off) before then
+      // showed every output as OFF on Zigbee after each boot.
+      auto *s = static_cast<switch_::Switch *>(e.entity);
+      if (!s->has_state())
+        return false;
+      out = s->state ? 1.0f : 0.0f;
       return true;
+    }
 #endif
 #ifdef USE_NUMBER
     case KIND_NUMBER: {

@@ -2,7 +2,7 @@
 # Not built on its own; a board file (redarc-camper.yaml for the XIAO ESP32-C6,
 # redarc-camper-c5.yaml for the XIAO ESP32-C5) includes it and adds the chip, flash layout and pins.
 # Board files set: name, friendly_name, version, ref, manifest_url, status_led_pin,
-# status_led_inverted, pairing_connection_params.
+# status_led_inverted, status_led_strapping, pairing_connection_params.
 
 esphome:
   name: ${name}
@@ -152,6 +152,7 @@ sensor:
     status_led:
       number: ${status_led_pin}
       inverted: ${status_led_inverted}
+      ignore_strapping_warning: ${status_led_strapping}
     # 0ms = don't ask the Display to change the BLE connection interval (75ms default stopped
     # telemetry on this unit).
     connection_interval: 0ms

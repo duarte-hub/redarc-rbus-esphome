@@ -286,10 +286,11 @@ void RedarcRbus::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
       break;
     }
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-      if (this->is_our_peer_(param->update_conn_params.bda))
+      if (this->is_our_peer_(param->update_conn_params.bda)) {
         ESP_LOGI(TAG, "BLE connection params: status %d, interval %.2f ms, latency %u, timeout %u ms",
                  param->update_conn_params.status, param->update_conn_params.conn_int * 1.25f,
                  param->update_conn_params.latency, param->update_conn_params.timeout * 10);
+      }
       break;
     case ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT:
       if (this->rssi_sensor_ != nullptr && param->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS &&
@@ -907,8 +908,9 @@ void RedarcRbusSwitch::on_raw(uint32_t raw) {
 
 void RedarcRbusSwitch::dump_config() {
   LOG_SWITCH("", "REDARC Output Switch", this);
-  if (this->channel_ != 0)
+  if (this->channel_ != 0) {
     ESP_LOGCONFIG(TAG, "  IO channel: %u", this->channel_);
+  }
 }
 
 #ifdef USE_SELECT
@@ -1123,9 +1125,10 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
 
   // Log each distinct PGN once per connection with its payload, so missing data
   // (e.g. voltage on a different PGN for some hardware) is easy to diagnose.
-  if (this->seen_pgns_.insert(pgn).second)
+  if (this->seen_pgns_.insert(pgn).second) {
     ESP_LOGD(TAG, "RX R-Bus PGN %u payload=%02x%02x%02x%02x%02x%02x%02x%02x", (unsigned) pgn, pay[0], pay[1],
              pay[2], pay[3], pay[4], pay[5], pay[6], pay[7]);
+  }
 
   uint64_t payload = 0;
   for (int i = 7; i >= 0; i--)
@@ -1140,9 +1143,10 @@ void RedarcRbus::handle_frame_(const uint8_t *data, uint16_t len) {
 #ifdef USE_TEXT_SENSOR
   this->handle_log_(pgn, pay, now);
 #endif
-  if (pgn == PGN_ACKNOWLEDGEMENT)  // reply to our parameter sets: type, SPN, index, status
+  if (pgn == PGN_ACKNOWLEDGEMENT) {  // reply to our parameter sets: type, SPN, index, status
     ESP_LOGD(TAG, "Ack from node 0x%02x: type %u SPN %u index %u status %u", hdr[3], pay[0],
              pay[1] | (pay[2] << 8), pay[3], pay[4]);
+  }
 
   auto only = this->pgn_source_.find(pgn);
   if (only != this->pgn_source_.end() && only->second != hdr[3])

@@ -25,6 +25,7 @@ substitutions:
   manifest_url: https://raw.githubusercontent.com/duarte-hub/redarc-rbus-esphome/ota/manifest.json
   status_led_pin: GPIO2       # D2, external LED to GND
   status_led_inverted: "false"
+  status_led_strapping: "false"   # "true" only for a strapping pin (ESPHome rejects it on others)
   pairing_connection_params: "true"
 
 packages:
