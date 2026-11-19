@@ -7,7 +7,7 @@
 // "configure reporting" fails for the rest (TABLE_FULL) and those values never update. This sends each value as an
 // unsolicited attribute report straight to the coordinator (the path ESPHome's `report:` option uses), which needs
 // no binding, and paces them so the radio is not flooded:
-//  - binary inputs and switches: at once on a change, and again every few minutes;
+//  - binary inputs, switches and numbers: at once on a change, and again every few minutes;
 //  - sensors: on a change of at least their resolution, no more than every 10 s, and at least every 5 minutes.
 //
 // It also writes the binary input and switch states into the Zigbee attributes again after each join. The stack
@@ -29,6 +29,9 @@
 #endif
 #ifdef USE_SWITCH
 #include "esphome/components/switch/switch.h"
+#endif
+#ifdef USE_NUMBER
+#include "esphome/components/number/number.h"
 #endif
 
 namespace esphome::redarc_rbus {
@@ -52,12 +55,18 @@ class ZigbeeSync : public Component {
   }
 #endif
 
+#ifdef USE_NUMBER
+  void add_number(zigbee::ZigbeeAttribute *attr, number::Number *n) {
+    this->entries_.push_back({attr, KIND_NUMBER, n, 0.0f});
+  }
+#endif
+
   void setup() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::LATE; }
 
  protected:
-  enum Kind : uint8_t { KIND_SENSOR, KIND_BINARY, KIND_SWITCH };
+  enum Kind : uint8_t { KIND_SENSOR, KIND_BINARY, KIND_SWITCH, KIND_NUMBER };
   struct Entry {
     zigbee::ZigbeeAttribute *attr;
     Kind kind;

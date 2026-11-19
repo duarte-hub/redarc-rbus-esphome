@@ -261,6 +261,65 @@ sensor:
     name: "ESP WiFi Signal"
     update_interval: 60s
     entity_category: diagnostic
+  # Zigbee only: text values as numbers, since Zigbee carries numbers and not text. The index is the
+  # raw R-Bus value (the RedVision dashboard maps them back). Hidden in Home Assistant by default.
+  - platform: template
+    id: zb_charging_stage_code
+    name: "TVMS 1 Charging Stage Code"
+    disabled_by_default: true
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      static const char *const names[] = {"Not Charging", "Desulphation", "Soft Start", "Boost",
+          "Absorption", "Battery Test", "Equalise", "Float", "Maintenance", "Recovery", "Charge Back",
+          "", "", "Limp Mode (Battery Not Configured)"};
+      const auto &v = id(charging_stage_text).state;
+      for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (names[i][0] != '\0' && v == names[i]) return (float) i;
+      return NAN;
+  - platform: template
+    id: zb_battery_chemistry_code
+    name: "TVMS 1 Battery Chemistry Code"
+    disabled_by_default: true
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      static const char *const names[] = {"Gel", "AGM", "Flooded Lead Acid", "Calcium Lead Acid",
+          "LiFePO4", "Heated LiFePO4"};
+      const auto &v = id(battery_chemistry_text).state;
+      for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (v == names[i]) return (float) i;
+      return NAN;
+  - platform: template
+    id: zb_load_disconnect_trigger_code
+    name: "TVMS 1 Load Disconnect Trigger Code"
+    disabled_by_default: true
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      static const char *const names[] = {"Loads Always Disabled", "Battery Voltage", "Battery SoC",
+          "Loads Always Enabled", "Local Supply Voltage"};
+      const auto &v = id(load_disconnect_trigger_text).state;
+      for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (v == names[i]) return (float) i;
+      return NAN;
+  # First active fault code ("Low Soc (0x8110), ..." -> 0x8110), 0 when there is none.
+  - platform: template
+    id: zb_active_fault_code
+    name: "TVMS 1 Active Fault Code"
+    disabled_by_default: true
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      if (!id(active_faults_text).has_state()) return NAN;
+      const auto &v = id(active_faults_text).state;
+      auto pos = v.find("(0x");
+      if (pos == std::string::npos) return 0.0f;
+      return (float) strtoul(v.c_str() + pos + 3, nullptr, 16);
 
 binary_sensor:
   - platform: redarc_rbus
@@ -306,19 +365,23 @@ text_sensor:
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub_1
     charging_stage:
+      id: charging_stage_text
       name: "TVMS 1 Charging Stage"
     charging_mode:
       name: "TVMS 1 Charging Mode"
     battery_chemistry:
+      id: battery_chemistry_text
       name: "TVMS 1 Battery Chemistry"
     dc_input_trigger:
       name: "TVMS 1 DC Input Trigger"
     load_disconnect_trigger:
+      id: load_disconnect_trigger_text
       name: "TVMS 1 Load Disconnect Trigger"
     channel_names:
       name: "TVMS 1 Channel Names"
     # Faults reported by any device, in the RedVision app's wording.
     active_faults:
+      id: active_faults_text
       name: "TVMS 1 Active Faults"
     link_status:
       name: "TVMS 1 BLE Link Status"
@@ -390,13 +453,41 @@ switch:
     redarc_rbus_id: redarc_hub_1
     name: "TVMS 1 Master Switch"
     channel: 15
+  # Zigbee only: the buttons as switches that press them (Zigbee has no button) and stay off.
+  # Keep these after the output channels: switches get Zigbee endpoints in this order.
+  - platform: template
+    id: zb_read_channel_names_switch
+    name: "TVMS 1 Read Channel Names Command"
+    disabled_by_default: true
+    entity_category: config
+    lambda: "return false;"
+    turn_on_action:
+      - button.press: read_channel_names_button
+  - platform: template
+    id: zb_sync_soc_full_switch
+    name: "TVMS 1 Sync Battery SoC to 100% Command"
+    disabled_by_default: true
+    entity_category: config
+    lambda: "return false;"
+    turn_on_action:
+      - button.press: sync_soc_full_button
+  - platform: template
+    id: zb_pair_now_switch
+    name: "TVMS 1 Pair Now Command"
+    disabled_by_default: true
+    entity_category: config
+    lambda: "return false;"
+    turn_on_action:
+      - button.press: pair_now_button
 
 select:
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub_1
     charging_mode:
+      id: charging_mode_select
       name: "TVMS 1 Charging Mode"
     dc_input_trigger:
+      id: dc_input_trigger_select
       name: "TVMS 1 DC Input Trigger"
 
 number:
@@ -412,6 +503,40 @@ number:
     set_action:
       - lambda: |-
           id(redarc_hub_1).set_passkey((uint32_t) x);
+  # Zigbee only: the two selects as their option index (Zigbee has no select). Hidden in Home
+  # Assistant by default; use the selects there.
+  - platform: template
+    id: zb_charging_mode_setting
+    name: "TVMS 1 Charging Mode Setting"
+    disabled_by_default: true
+    entity_category: config
+    min_value: 0
+    max_value: 1
+    step: 1
+    update_interval: 5s
+    lambda: |-
+      auto idx = id(charging_mode_select).active_index();
+      return idx.has_value() ? (float) idx.value() : NAN;
+    set_action:
+      - select.set_index:
+          id: charging_mode_select
+          index: !lambda "return (size_t) x;"
+  - platform: template
+    id: zb_dc_input_trigger_setting
+    name: "TVMS 1 DC Input Trigger Setting"
+    disabled_by_default: true
+    entity_category: config
+    min_value: 0
+    max_value: 7
+    step: 1
+    update_interval: 5s
+    lambda: |-
+      auto idx = id(dc_input_trigger_select).active_index();
+      return idx.has_value() ? (float) idx.value() : NAN;
+    set_action:
+      - select.set_index:
+          id: dc_input_trigger_select
+          index: !lambda "return (size_t) x;"
 
 button:
   - platform: template
@@ -424,12 +549,15 @@ button:
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub_1
     read_channel_names:
+      id: read_channel_names_button
       name: "TVMS 1 Read Channel Names"
   - platform: redarc_rbus
     redarc_rbus_id: redarc_hub_1
     sync_soc_full:
+      id: sync_soc_full_button
       name: "TVMS 1 Sync Battery SoC to 100%"
   - platform: template
+    id: pair_now_button
     name: "TVMS 1 Pair Now"
     on_press:
       - lambda: |-

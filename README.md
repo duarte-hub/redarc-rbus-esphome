@@ -451,7 +451,14 @@ leaves entities as normal ESPHome entities but only puts a short list on Zigbee:
 voltage, current, power, temperature, time remaining, solar power, voltage and current, the
 240V AC / vehicle / solar inputs (active, voltage, current), charger output and load current,
 inverter on and power, tank levels, fault active, the Wi-Fi / BLE signal sensors, and all
-switches. Text sensors (charging stage, faults text) cannot go over Zigbee. Edit `ZIGBEE_EXPOSE` in that file to change it.
+switches. For a dashboard that runs on Zigbee alone it also exposes the settings and alarms
+(battery and charger configuration, load disconnect and alarm set points, solar energy, daily SoC
+range, voltage inputs, ignition, tank and low battery alarms, charger derating). Zigbee carries no
+text, selects or buttons, so `common.yaml` adds Zigbee-only stand-ins, hidden in Home Assistant by
+default: `... Code` sensors for the charging stage, battery chemistry, load disconnect trigger and
+first active fault (the raw R-Bus value), `... Setting` numbers for the two selects (option index),
+and `... Command` switches that press the Read Channel Names, Sync SoC and Pair Now buttons. Edit
+the `ZIGBEE_EXPOSE*` lists in that file to change it.
 
 ```yaml
 zigbee:

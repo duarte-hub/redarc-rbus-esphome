@@ -48,6 +48,15 @@ bool ZigbeeSync::value_(const Entry &e, float &out) const {
       out = static_cast<switch_::Switch *>(e.entity)->state ? 1.0f : 0.0f;
       return true;
 #endif
+#ifdef USE_NUMBER
+    case KIND_NUMBER: {
+      auto *n = static_cast<number::Number *>(e.entity);
+      if (!n->has_state() || std::isnan(n->state))
+        return false;
+      out = n->state;
+      return true;
+    }
+#endif
     default:
       return false;
   }
@@ -98,7 +107,7 @@ void ZigbeeSync::tick_() {
     }
     if (!due)
       continue;
-    if (e.kind != KIND_SENSOR) {
+    if (e.kind == KIND_BINARY || e.kind == KIND_SWITCH) {
       // Write the state again first: the attribute may hold a stale value (see the header)
       e.attr->set_attr<bool>(v != 0.0f);
     }

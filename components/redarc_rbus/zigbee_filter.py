@@ -46,6 +46,30 @@ ZIGBEE_EXPOSE_ADDED = [
     r"inverter (on|power)$",
 ]
 NEW_BASE = {"validate_sensor_esp32": 12, "validate_binary_sensor_esp32": 2}
+# Added for the RedVision dashboard over Zigbee: settings, alarms and the text values as codes
+# (Zigbee carries numbers, not text). Numbered after the "added" ones, from NEW_BASE_2.
+ZIGBEE_EXPOSE_ADDED_2 = [
+    r"state of health$",
+    r"charger output voltage$",
+    r"inverter output voltage$",
+    r"battery capacity$",
+    r"battery max charge current$",
+    r"charger max output current$",
+    r"alarm set point$",
+    r"load disconnect (voltage|soc) (off|on)$",
+    r"solar energy (today|yesterday)$",
+    r"soc (min|max) \(last day\)$",
+    r"voltage input \d$",
+    r" code$",  # Zigbee-only template sensors (see common.yaml)
+    r"charger derating$",
+    r"low battery (soc|voltage) alarm$",
+    r"load disconnect active$",
+    r"ignition$",
+    r"tank \d alarm$",
+    r"pairing code$",  # numbers
+    r" setting$",
+]
+NEW_BASE_2 = {"validate_sensor_esp32": 21, "validate_binary_sensor_esp32": 6, "validate_number_esp32": 1}
 # Entity kinds that are always exposed whatever their name (the control switches).
 EXPOSE_ALL = {"validate_switch_esp32"}
 
@@ -53,6 +77,8 @@ EXPOSE_ALL = {"validate_switch_esp32"}
 _NEVER = re.compile(r"(^|\s)vpn\b", re.IGNORECASE)
 _PATTERNS = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE]
 _ADDED = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED]
+_ADDED_2 = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED_2]
+_BASES = {"orig": {}, "added": NEW_BASE, "added2": NEW_BASE_2}
 _installed = False
 
 
@@ -72,6 +98,8 @@ def _wrap(zigbee, fn_name):
                 group = "orig"
             elif any(p.search(name) for p in _ADDED):
                 group = "added"
+            elif any(p.search(name) for p in _ADDED_2):
+                group = "added2"
             else:
                 return config  # not registered with Zigbee; still a normal ESPHome entity
         if config.get(CONF_REPORT) is None:
@@ -82,7 +110,7 @@ def _wrap(zigbee, fn_name):
             from esphome.core import CORE
             nxt = CORE.data.setdefault("redarc_rbus_zigbee_ep", {})
             key = (fn_name, group)
-            ep = nxt.get(key, NEW_BASE.get(fn_name, 1) if group == "added" else 1)
+            ep = nxt.get(key, _BASES[group].get(fn_name, 1))
             nxt[key] = ep + 1
             config["endpoint"] = ep
         config = original(config, *args, **kwargs)
@@ -97,6 +125,7 @@ _KINDS = {
     "validate_sensor_esp32": "sensor",
     "validate_binary_sensor_esp32": "binary_sensor",
     "validate_switch_esp32": "switch",
+    "validate_number_esp32": "number",
 }
 
 
@@ -151,6 +180,8 @@ async def sync_to_code():
             cg.add(var.add_sensor(attr, entity, min_change))
         elif kind == "binary_sensor":
             cg.add(var.add_binary_sensor(attr, entity))
+        elif kind == "number":
+            cg.add(var.add_number(attr, entity))
         else:
             cg.add(var.add_switch(attr, entity))
 
