@@ -66,19 +66,6 @@ esp32:
       # (mbedtls_ssl_setup -0x7F00, "Failed to fetch manifest").
       CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC: n
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: y
-      # Bluetooth controller buffers sized for one link to the Display and a slow passive scan
-      # (defaults are for several busy links). Frees ~14 KB of internal RAM for the Zigbee
-      # endpoints the dashboard needs; with them Bluetooth could not start on the defaults.
-      CONFIG_BT_LE_HCI_EVT_HI_BUF_COUNT: "10"
-      CONFIG_BT_LE_HCI_EVT_LO_BUF_COUNT: "6"
-      CONFIG_BT_LE_MSYS_1_BLOCK_COUNT: "8"
-      CONFIG_BT_LE_MSYS_2_BLOCK_COUNT: "12"
-      CONFIG_BT_LE_ACL_BUF_COUNT: "6"
-      CONFIG_BT_LE_MAX_CONNECTIONS: "2"
-
-# One link to the Display, plus Improv over Bluetooth during setup (default 3; each costs RAM).
-esp32_ble:
-  max_connections: 2
 
 psram:
   mode: quad

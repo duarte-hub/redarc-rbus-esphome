@@ -10,7 +10,7 @@ namespace esphome::redarc_rbus {
 static const char *const TAG = "redarc_rbus.zigbee";
 
 static constexpr uint32_t TICK_MS = 250;
-static constexpr uint8_t REPORTS_PER_TICK = 1;          // at most 4 reports a second (the radio is shared with BLE)
+static constexpr uint8_t REPORTS_PER_TICK = 3;          // at most 12 reports a second
 static constexpr uint32_t SENSOR_MIN_MS = 10 * 1000;    // a changing sensor at most every 10 s
 static constexpr uint32_t REFRESH_MS = 5 * 60 * 1000;   // everything at least every 5 minutes
 static constexpr uint32_t JOIN_SETTLE_MS = 5 * 1000;    // after a join: let the stack finish starting up first

@@ -49,22 +49,25 @@ NEW_BASE = {"validate_sensor_esp32": 12, "validate_binary_sensor_esp32": 2}
 # Added for the RedVision dashboard over Zigbee: settings, alarms and the text values as codes
 # (Zigbee carries numbers, not text). Numbered after the "added" ones, from NEW_BASE_2.
 ZIGBEE_EXPOSE_ADDED_2 = [
-    # sensors (new endpoints; keep this list short: each endpoint costs internal RAM on the C5)
+    r"state of health$",
     r"charger output voltage$",
     r"inverter output voltage$",
-    r"solar energy today$",
-    r"charging stage code$",  # Zigbee-only template sensors (see common.yaml)
-    r"active fault code$",
-    # binary inputs (on existing endpoints)
+    r"battery capacity$",
+    r"battery max charge current$",
+    r"charger max output current$",
+    r"alarm set point$",
+    r"load disconnect (voltage|soc) (off|on)$",
+    r"solar energy (today|yesterday)$",
+    r"soc (min|max) \(last day\)$",
+    r"voltage input \d$",
+    r" code$",  # Zigbee-only template sensors (see common.yaml)
     r"charger derating$",
     r"low battery (soc|voltage) alarm$",
     r"load disconnect active$",
     r"ignition$",
     r"tank \d alarm$",
-    # numbers (analog outputs, on existing endpoints): the select stand-ins and read-only values
-    r"pairing code$",
+    r"pairing code$",  # numbers
     r" setting$",
-    r" value$",
 ]
 NEW_BASE_2 = {"validate_sensor_esp32": 21, "validate_binary_sensor_esp32": 6, "validate_number_esp32": 1}
 # Entity kinds that are always exposed whatever their name (the control switches).
@@ -74,7 +77,7 @@ EXPOSE_ALL = {"validate_switch_esp32"}
 _NEVER = re.compile(r"(^|\s)vpn\b", re.IGNORECASE)
 _PATTERNS = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE]
 _ADDED = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED]
-_ADDED_2 = [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED_2]
+_ADDED_2 = []  # DIAG: [re.compile(p, re.IGNORECASE) for p in ZIGBEE_EXPOSE_ADDED_2]
 _BASES = {"orig": {}, "added": NEW_BASE, "added2": NEW_BASE_2}
 _installed = False
 
@@ -160,9 +163,6 @@ async def sync_to_code():
     zb_conf = CORE.config.get("zigbee")
     if not entries or not zb_conf:
         return
-    # A bigger stack for the Zigbee task (see zigbee_stack.cpp)
-    cg.add_build_flag("-Wl,--wrap=xTaskCreatePinnedToCore")
-    cg.add_build_flag("-Wl,--undefined=__wrap_xTaskCreatePinnedToCore")
     if isinstance(zb_conf, list):
         zb_conf = zb_conf[0]
     ns = cg.esphome_ns.namespace("redarc_rbus")
