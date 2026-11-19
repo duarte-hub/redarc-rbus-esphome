@@ -182,6 +182,8 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
     this->logs_.push_back({s, pgn, per_frame, value_bytes, std::vector<int32_t>(max_entries, -1), 0});
   }
   void set_active_faults_sensor(text_sensor::TextSensor *s) { this->faults_text_ = s; }
+  // The last crash from the core dump in flash (see crash_report.h), published once at boot.
+  void set_last_crash_sensor(text_sensor::TextSensor *s) { this->last_crash_text_ = s; }
 #endif
 #ifdef USE_BINARY_SENSOR
   void set_fault_active_sensor(binary_sensor::BinarySensor *s) { this->fault_active_ = s; }
@@ -296,6 +298,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   std::map<uint32_t, uint16_t> active_faults_;
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *faults_text_{nullptr};
+  text_sensor::TextSensor *last_crash_text_{nullptr};
 #endif
 #ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *fault_active_{nullptr};

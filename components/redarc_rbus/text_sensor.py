@@ -11,6 +11,7 @@ CONF_CHANNEL_STATUS = "channel_status"
 CONF_CHANNEL = "channel"
 CONF_CHANNEL_NAMES = "channel_names"
 CONF_ACTIVE_FAULTS = "active_faults"
+CONF_LAST_CRASH = "last_crash"
 
 # Link diagnostics: (setter, icon).
 DIAGNOSTICS = {
@@ -86,6 +87,10 @@ CONFIG_SCHEMA = cv.Schema(
         },
         # Active faults reported by any node, with the app's titles, e.g. "Low Soc (0x8110)".
         cv.Optional(CONF_ACTIVE_FAULTS): text_sensor.text_sensor_schema(icon="mdi:alert-circle"),
+        # The last crash from the ESP's core dump (needs core dumps saved to flash), at boot.
+        cv.Optional(CONF_LAST_CRASH): text_sensor.text_sensor_schema(
+            icon="mdi:alert-octagon", entity_category="diagnostic"
+        ),
         cv.Optional(CONF_TIME_REMAINING_TEXT): text_sensor.text_sensor_schema(icon="mdi:timer-sand"),
         cv.Optional(CONF_CHANNEL_NAMES): text_sensor.text_sensor_schema(
             icon="mdi:tag-text-outline", entity_category="diagnostic"
@@ -116,6 +121,9 @@ async def to_code(config):
     if CONF_ACTIVE_FAULTS in config:
         sens = await text_sensor.new_text_sensor(config[CONF_ACTIVE_FAULTS])
         cg.add(parent.set_active_faults_sensor(sens))
+    if CONF_LAST_CRASH in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_LAST_CRASH])
+        cg.add(parent.set_last_crash_sensor(sens))
     if CONF_CHANNEL_NAMES in config:
         sens = await text_sensor.new_text_sensor(config[CONF_CHANNEL_NAMES])
         cg.add(parent.set_labels_sensor(sens))

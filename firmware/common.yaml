@@ -19,7 +19,7 @@ esphome:
               id(redarc_hub_1).set_remote_mac(id(display_mac).state);
 
 debug:
-  update_interval: 5min
+  update_interval: 60s
 logger:
   level: WARN
 
@@ -257,6 +257,14 @@ sensor:
     entity_category: diagnostic
   - platform: uptime
     name: "ESP Uptime"
+  # Internal RAM (the C5 has little to spare with Wi-Fi, Bluetooth and Zigbee)
+  - platform: debug
+    free:
+      name: "ESP Free Internal Heap"
+    block:
+      name: "ESP Largest Free Block"
+    min_free:
+      name: "ESP Min Free Internal Heap"
   - platform: wifi_signal
     name: "ESP WiFi Signal"
     update_interval: 60s
@@ -383,6 +391,8 @@ text_sensor:
     active_faults:
       id: active_faults_text
       name: "TVMS 1 Active Faults"
+    last_crash:
+      name: "ESP Last Crash"
     link_status:
       name: "TVMS 1 BLE Link Status"
     last_disconnect:

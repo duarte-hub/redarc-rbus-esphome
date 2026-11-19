@@ -1,3 +1,4 @@
+#include "crash_report.h"
 #include "redarc_rbus.h"
 #include "fault_codes.h"
 
@@ -69,6 +70,10 @@ static const uint32_t FILTER_WRITE_INTERVAL_MS = 40;
 static const uint32_t PUBLISH_HEARTBEAT_MS = 60000;
 
 void RedarcRbus::setup() {
+  if (this->last_crash_text_ != nullptr) {
+    std::string crash = last_crash_summary();
+    this->last_crash_text_->publish_state(crash.empty() ? "None" : crash);
+  }
   this->configure_security_();
   this->setup_done_ = true;
   this->esp_bonded_ = this->esp_has_bond_();
