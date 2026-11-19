@@ -3,8 +3,9 @@ import esphome.config_validation as cv
 from esphome import pins
 from esphome.components import ble_client, sensor
 from esphome.const import CONF_ID, STATE_CLASS_MEASUREMENT
+from esphome.core import CORE
 
-from . import RedarcRbus
+from . import RedarcRbus, zigbee_filter
 
 CODEOWNERS = ["@duarte-hub"]
 DEPENDENCIES = ["ble_client", "esp32_ble"]
@@ -193,6 +194,8 @@ CONFIG_SCHEMA = (
 
 
 async def to_code(config):
+    # Zigbee reports without bindings for the entities exposed on Zigbee (does nothing without `zigbee:`)
+    CORE.add_job(zigbee_filter.sync_to_code)
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await ble_client.register_ble_node(var, config)

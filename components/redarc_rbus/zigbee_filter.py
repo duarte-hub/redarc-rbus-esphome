@@ -13,7 +13,8 @@ functions it leaves them alone (every entity is then exposed, as without this fi
 import logging
 import re
 
-from esphome.const import CONF_NAME
+import esphome.codegen as cg
+from esphome.const import CONF_ACCURACY_DECIMALS, CONF_ID, CONF_NAME, CONF_REPORT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +74,9 @@ def _wrap(zigbee, fn_name):
                 group = "added"
             else:
                 return config  # not registered with Zigbee; still a normal ESPHome entity
+        if config.get(CONF_REPORT) is None:
+            # Report straight to the coordinator when zigbee_sync asks (no binding needed, see zigbee_sync.h)
+            config[CONF_REPORT] = _report_enable()
         if config.get("endpoint") is None:
             # Per-run counters ((kind, group) -> next endpoint); CORE.data is reset every run.
             from esphome.core import CORE
@@ -81,9 +85,74 @@ def _wrap(zigbee, fn_name):
             ep = nxt.get(key, NEW_BASE.get(fn_name, 1) if group == "added" else 1)
             nxt[key] = ep + 1
             config["endpoint"] = ep
-        return original(config, *args, **kwargs)
+        config = original(config, *args, **kwargs)
+        _record(fn_name, config)
+        return config
 
     setattr(zigbee, fn_name, filtered)
+
+
+# Exposed entities, for zigbee_sync: id(entity config) -> (kind, attribute id, entity id, accuracy decimals)
+_KINDS = {
+    "validate_sensor_esp32": "sensor",
+    "validate_binary_sensor_esp32": "binary_sensor",
+    "validate_switch_esp32": "switch",
+}
+
+
+_SYNC_ID = "redarc_rbus_zigbee_sync"
+
+
+def _report_enable():
+    import esphome.config_validation as cv
+    from esphome.core.entity_helpers import ZIGBEE_REPORT
+
+    return cv.enum(ZIGBEE_REPORT, lower=True)("enable")
+
+
+def _record(fn_name, config):
+    kind = _KINDS.get(fn_name)
+    if kind is None or CONF_ID not in config:
+        return
+    # The attribute ESPHome connects to the entity: presentValue (0x0055)
+    for attr in config.get("zigbee_attributes", []):
+        if attr.get("attribute_id") == 0x55 and attr.get("id") is not None:
+            from esphome.core import CORE
+
+            entries = CORE.data.setdefault("redarc_rbus_zigbee_sync", {})
+            # Counted now: ESPHome sizes its component list from the IDs seen while validating
+            CORE.component_ids.add(_SYNC_ID)
+            entries[id(config)] = (kind, attr["id"], config[CONF_ID], config.get(CONF_ACCURACY_DECIMALS))
+            return
+
+
+async def sync_to_code():
+    """Adds the zigbee_sync component for the exposed entities (no-op without `zigbee:`)."""
+    from esphome.core import CORE
+
+    entries = CORE.data.get("redarc_rbus_zigbee_sync", {})
+    zb_conf = CORE.config.get("zigbee")
+    if not entries or not zb_conf:
+        return
+    if isinstance(zb_conf, list):
+        zb_conf = zb_conf[0]
+    ns = cg.esphome_ns.namespace("redarc_rbus")
+    sync_t = ns.class_("ZigbeeSync", cg.Component)
+    zb = await cg.get_variable(zb_conf[CONF_ID])
+    from esphome.core import ID
+
+    var = cg.new_Pvariable(ID(_SYNC_ID, is_declaration=True, type=sync_t), zb)
+    await cg.register_component(var, {})
+    for kind, attr_id, entity_id, decimals in entries.values():
+        attr = await cg.get_variable(attr_id)
+        entity = await cg.get_variable(entity_id)
+        if kind == "sensor":
+            min_change = 10.0 ** -(decimals if decimals is not None else 0)
+            cg.add(var.add_sensor(attr, entity, min_change))
+        elif kind == "binary_sensor":
+            cg.add(var.add_binary_sensor(attr, entity))
+        else:
+            cg.add(var.add_switch(attr, entity))
 
 
 def install():

@@ -471,6 +471,13 @@ Zigbee data in the same NVS partition), so pair the Display again after it. The 
 Display link after enabling it; ESPHome's docs note C6 boards that only work close to the
 coordinator.
 
+The values are sent to the coordinator as attribute reports without bindings
+(`zigbee_sync.cpp`): the ESP32 binding table holds 16 entries, fewer than the values exposed, so
+*configure reporting* in Zigbee2MQTT / ZHA fails (TABLE_FULL) for the rest. You do not need to set
+up reporting. Binary inputs and switches are sent at once when they change, sensors on a change
+of at least their resolution and no more than every 10 s, and everything at least every
+5 minutes and after each join (which also corrects flags the stack restored from flash at boot).
+
 ### Zigbee signal strength
 
 `components/zigbee_link` adds the RSSI and LQI of the link to the Zigbee parent (the coordinator
