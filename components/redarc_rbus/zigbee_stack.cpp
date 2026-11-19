@@ -13,7 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static constexpr uint32_t ZIGBEE_TASK_STACK = 8192;
+static constexpr uint32_t ZIGBEE_TASK_STACK = 6144;
 
 extern "C" {
 BaseType_t __real_xTaskCreatePinnedToCore(TaskFunction_t code, const char *const name, const uint32_t depth,

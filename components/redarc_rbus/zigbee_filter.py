@@ -49,25 +49,22 @@ NEW_BASE = {"validate_sensor_esp32": 12, "validate_binary_sensor_esp32": 2}
 # Added for the RedVision dashboard over Zigbee: settings, alarms and the text values as codes
 # (Zigbee carries numbers, not text). Numbered after the "added" ones, from NEW_BASE_2.
 ZIGBEE_EXPOSE_ADDED_2 = [
-    r"state of health$",
+    # sensors (new endpoints; keep this list short: each endpoint costs internal RAM on the C5)
     r"charger output voltage$",
     r"inverter output voltage$",
-    r"battery capacity$",
-    r"battery max charge current$",
-    r"charger max output current$",
-    r"alarm set point$",
-    r"load disconnect (voltage|soc) (off|on)$",
-    r"solar energy (today|yesterday)$",
-    r"soc (min|max) \(last day\)$",
-    r"voltage input \d$",
-    r" code$",  # Zigbee-only template sensors (see common.yaml)
+    r"solar energy today$",
+    r"charging stage code$",  # Zigbee-only template sensors (see common.yaml)
+    r"active fault code$",
+    # binary inputs (on existing endpoints)
     r"charger derating$",
     r"low battery (soc|voltage) alarm$",
     r"load disconnect active$",
     r"ignition$",
     r"tank \d alarm$",
-    r"pairing code$",  # numbers
+    # numbers (analog outputs, on existing endpoints): the select stand-ins and read-only values
+    r"pairing code$",
     r" setting$",
+    r" value$",
 ]
 NEW_BASE_2 = {"validate_sensor_esp32": 21, "validate_binary_sensor_esp32": 6, "validate_number_esp32": 1}
 # Entity kinds that are always exposed whatever their name (the control switches).

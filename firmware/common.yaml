@@ -173,6 +173,7 @@ sensor:
     temperature:
       name: "TVMS 1 Battery Temperature"
     state_of_health:
+      id: zbsrc_state_of_health
       name: "TVMS 1 Battery State of Health"
     time_remaining:
       name: "TVMS 1 Battery Time Remaining"
@@ -201,33 +202,46 @@ sensor:
     inverter_power:
       name: "TVMS 1 Inverter Power"
     battery_capacity:
+      id: zbsrc_battery_capacity
       name: "TVMS 1 Battery Capacity"
     battery_max_charge_current:
+      id: zbsrc_battery_max_charge_current
       name: "TVMS 1 Battery Max Charge Current"
     charger_max_output_current:
+      id: zbsrc_charger_max_output_current
       name: "TVMS 1 Charger Max Output Current"
     low_battery_soc_setpoint:
+      id: zbsrc_low_battery_soc_setpoint
       name: "TVMS 1 Low Battery SoC Alarm Set Point"
     low_battery_voltage_setpoint:
+      id: zbsrc_low_battery_voltage_setpoint
       name: "TVMS 1 Low Battery Voltage Alarm Set Point"
     load_disconnect_voltage_off:
+      id: zbsrc_load_disconnect_voltage_off
       name: "TVMS 1 Load Disconnect Voltage Off"
     load_disconnect_voltage_on:
+      id: zbsrc_load_disconnect_voltage_on
       name: "TVMS 1 Load Disconnect Voltage On"
     load_disconnect_soc_off:
+      id: zbsrc_load_disconnect_soc_off
       name: "TVMS 1 Load Disconnect SoC Off"
     load_disconnect_soc_on:
+      id: zbsrc_load_disconnect_soc_on
       name: "TVMS 1 Load Disconnect SoC On"
     solar_energy_today:
       name: "TVMS 1 Solar Energy Today"
     solar_energy_yesterday:
+      id: zbsrc_solar_energy_yesterday
       name: "TVMS 1 Solar Energy Yesterday"
     soc_min_last_day:
+      id: zbsrc_soc_min_last_day
       name: "TVMS 1 Battery SoC Min (Last Day)"
     soc_max_last_day:
+      id: zbsrc_soc_max_last_day
       name: "TVMS 1 Battery SoC Max (Last Day)"
     analog_channels:
       - channel: 17
+        id: zbsrc_voltage_input_1
         name: "TVMS 1 Voltage Input 1"
         unit_of_measurement: "V"
         device_class: voltage
@@ -235,6 +249,7 @@ sensor:
         filters:
           - multiply: 0.001
       - channel: 18
+        id: zbsrc_voltage_input_2
         name: "TVMS 1 Voltage Input 2"
         unit_of_measurement: "V"
         device_class: voltage
@@ -547,6 +562,196 @@ number:
       - select.set_index:
           id: dc_input_trigger_select
           index: !lambda "return (size_t) x;"
+  # Zigbee only: settings and other slow values as read-only numbers. A number goes on an existing
+  # Zigbee endpoint, a sensor needs a new one, and the C5 has no RAM for 20 more endpoints next to
+  # Bluetooth. Writes are ignored. Hidden in Home Assistant by default.
+  - platform: template
+    name: "TVMS 1 Battery State of Health Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_state_of_health).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Battery Capacity Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_battery_capacity).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Battery Max Charge Current Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_battery_max_charge_current).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Charger Max Output Current Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_charger_max_output_current).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Low Battery SoC Alarm Set Point Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_low_battery_soc_setpoint).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Low Battery Voltage Alarm Set Point Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_low_battery_voltage_setpoint).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Load Disconnect Voltage Off Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_load_disconnect_voltage_off).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Load Disconnect Voltage On Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_load_disconnect_voltage_on).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Load Disconnect SoC Off Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_load_disconnect_soc_off).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Load Disconnect SoC On Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_load_disconnect_soc_on).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Solar Energy Yesterday Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_solar_energy_yesterday).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Battery SoC Min (Last Day) Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_soc_min_last_day).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Battery SoC Max (Last Day) Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_soc_max_last_day).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Voltage Input 1 Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_voltage_input_1).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Voltage Input 2 Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zbsrc_voltage_input_2).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Battery Chemistry Code Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zb_battery_chemistry_code).state;"
+    set_action:
+      - lambda: "return;"  # read-only
+  - platform: template
+    name: "TVMS 1 Load Disconnect Trigger Code Value"
+    disabled_by_default: true
+    entity_category: diagnostic
+    min_value: -1000000
+    max_value: 1000000
+    step: 0.001
+    update_interval: 5s
+    lambda: "return id(zb_load_disconnect_trigger_code).state;"
+    set_action:
+      - lambda: "return;"  # read-only
 
 button:
   - platform: template

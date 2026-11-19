@@ -455,9 +455,12 @@ switches. For a dashboard that runs on Zigbee alone it also exposes the settings
 (battery and charger configuration, load disconnect and alarm set points, solar energy, daily SoC
 range, voltage inputs, ignition, tank and low battery alarms, charger derating). Zigbee carries no
 text, selects or buttons, so `common.yaml` adds Zigbee-only stand-ins, hidden in Home Assistant by
-default: `... Code` sensors for the charging stage, battery chemistry, load disconnect trigger and
-first active fault (the raw R-Bus value), `... Setting` numbers for the two selects (option index),
-and `... Command` switches that press the Read Channel Names, Sync SoC and Pair Now buttons. Edit
+default: `... Code` sensors for the charging stage and first active fault (the raw R-Bus value),
+`... Setting` numbers for the two selects (option index), `... Command` switches that press the
+Read Channel Names, Sync SoC and Pair Now buttons, and read-only `... Value` numbers for the
+settings and other slow values. A number sits on an existing endpoint while a sensor needs a new
+one, and on the ESP32-C5 every endpoint costs internal RAM that Bluetooth needs: with 42 endpoints
+Bluetooth could not start. ESPHome's Zigbee task also gets a 6 KB stack (`zigbee_stack.cpp`). Edit
 the `ZIGBEE_EXPOSE*` lists in that file to change it.
 
 ```yaml
