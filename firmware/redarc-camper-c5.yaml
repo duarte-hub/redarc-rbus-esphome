@@ -28,6 +28,8 @@ substitutions:
   # is fine for the board's own LED). For an external LED on D2 like the C6 unit: GPIO25, "false".
   status_led_pin: GPIO27
   status_led_inverted: "true"
+  # The C5 loses the Display about 1 s after asking it for new link timing before pairing.
+  pairing_connection_params: "false"
 
 packages:
   common: !include common.yaml

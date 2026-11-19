@@ -171,6 +171,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   void set_rssi_interval(uint32_t ms) { this->rssi_interval_ms_ = ms; }
   // Wake the TVMS (Keep Awake, then reconnect) when telemetry stops. Off = let it sleep.
   void set_keep_awake(bool on) { this->keep_awake_ = on; }
+  void set_pairing_conn_params(bool on) { this->pairing_conn_params_ = on; }
   // How often to ask the Display for its cached history logs (0 = never).
   void set_history_interval(uint32_t ms) { this->history_interval_ms_ = ms; }
 #ifdef USE_TEXT_SENSOR
@@ -263,6 +264,7 @@ class RedarcRbus : public Component, public ble_client::BLEClientNode {
   // Keep-awake watchdog: re-wake the system when the stream goes quiet.
   void keep_awake_check_(uint32_t now);
   bool keep_awake_{true};
+  bool pairing_conn_params_{true};
   uint32_t last_frame_ms_{0};
   uint32_t last_wake_ms_{0};
   uint8_t wake_tries_{0};

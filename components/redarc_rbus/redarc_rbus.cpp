@@ -348,7 +348,7 @@ void RedarcRbus::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         // with the Display going silent until the link timed out.
         if (this->esp_has_bond_()) {
           esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
-        } else {
+        } else if (this->pairing_conn_params_) {
           // The app's captured pairing link runs at a 30 ms interval, latency 0 and survives
           // 9+ s of waiting for the passkey. Ask for the same so the Display keeps answering.
           esp_ble_conn_update_params_t p = {};

@@ -17,6 +17,7 @@ CONF_CONNECTION_INTERVAL = "connection_interval"
 CONF_MIN_PUBLISH_INTERVAL = "min_publish_interval"
 CONF_HISTORY_INTERVAL = "history_interval"
 CONF_KEEP_AWAKE = "keep_awake"
+CONF_PAIRING_CONN_PARAMS = "pairing_connection_params"
 CONF_BALANCE_COEXISTENCE = "balance_coexistence"
 CONF_TIME_REMAINING = "time_remaining"
 CONF_LOAD_DISCONNECT_NODE = "load_disconnect_node"
@@ -174,6 +175,9 @@ CONFIG_SCHEMA = (
             # Switch the radio from "prefer Bluetooth" back to balanced once streaming, so Wi-Fi
             # (the HA API) is not starved by the always-open BLE link.
             cv.Optional(CONF_BALANCE_COEXISTENCE, default=True): cv.boolean,
+            # Before pairing, ask the Display for the app's link timing (30 ms, 6 s timeout).
+            # Needed on the ESP32-C6; on the ESP32-C5 the link drops when the change applies.
+            cv.Optional(CONF_PAIRING_CONN_PARAMS, default=True): cv.boolean,
             # Load Disconnect Status (127240) comes from both the charger (0x01) and the
             # distribution box (0x24) with different settings; follow this node's values.
             cv.Optional(CONF_LOAD_DISCONNECT_NODE, default=0x24): cv.hex_int_range(min=0, max=0xFD),
@@ -231,5 +235,6 @@ async def to_code(config):
     cg.add(var.set_min_publish_interval(config[CONF_MIN_PUBLISH_INTERVAL].total_milliseconds))
     cg.add(var.set_history_interval(config[CONF_HISTORY_INTERVAL].total_milliseconds))
     cg.add(var.set_keep_awake(config[CONF_KEEP_AWAKE]))
+    cg.add(var.set_pairing_conn_params(config[CONF_PAIRING_CONN_PARAMS]))
     cg.add(var.set_balance_coexistence(config[CONF_BALANCE_COEXISTENCE]))
     cg.add(var.set_pgn_source(127240, config[CONF_LOAD_DISCONNECT_NODE]))
