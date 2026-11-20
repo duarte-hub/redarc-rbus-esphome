@@ -136,6 +136,8 @@ class TailscaleComponent : public Component {
   std::string get_vpn_ip() const;
   int get_peer_count() const;
   void request_reconnect();
+  // redarc-rbus-esphome: the restored VPN Enabled state at boot, without the side effects of a switch.
+  void restore_enabled(bool enabled) { this->tailscale_user_enabled_ = enabled; }
   void set_tailscale_enabled(bool enabled);
   void confirm_enable_rollback();
 
@@ -279,7 +281,13 @@ class TailscaleReconnectButton : public button::Button, public Component {
 class TailscaleEnableSwitch : public switch_::Switch, public Component {
  public:
   void set_parent(TailscaleComponent *parent) { this->parent_ = parent; }
-  void setup() override { this->publish_state(true); }
+  // redarc-rbus-esphome: the state is restored (upstream always started on): switching the VPN off
+  // has to survive a restart, or a VPN that disturbs the unit comes straight back.
+  void setup() override {
+    const bool on = this->get_initial_state_with_restore_mode().value_or(true);
+    this->parent_->restore_enabled(on);
+    this->publish_state(on);
+  }
 
  protected:
   void write_state(bool state) override {

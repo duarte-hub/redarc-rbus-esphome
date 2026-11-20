@@ -47,6 +47,8 @@ project is affiliated with or endorses this code.
   within 10 minutes of the VPN starting, the VPN is not started again until Reconnect is pressed
   or it is switched on again (the count lives in RAM that survives a reset).
 
+- `tailscale.h`: the VPN Enabled switch restores its state (upstream always started on).
+
 Everything else is unmodified so a newer upstream release can be diffed and merged. Review the
 upstream changelog before updating: this code runs on the device next to your Tailscale key.
 - `microlink/components/microlink/src/ml_coord.c`, `fetch_server_pubkey()`: with no `login_server`

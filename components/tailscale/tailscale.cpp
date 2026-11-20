@@ -708,6 +708,7 @@ void TailscaleComponent::publish_state_() {
           break;
         default:
           hint = !this->has_auth_key() ? "No auth key yet - enter one on the ESP tab of the web page"
+                 : !this->tailscale_user_enabled_ ? "Off: switch VPN Enabled on to connect"
                  : this->crash_paused_ ? GUARD_PAUSED_HINT
                                        : "Waiting for VPN...";
           break;

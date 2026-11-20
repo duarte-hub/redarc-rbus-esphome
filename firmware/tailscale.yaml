@@ -64,6 +64,8 @@ switch:
   - platform: tailscale
     vpn_enabled:
       name: "VPN Enabled"
+      # Kept across restarts; on until switched off.
+      restore_mode: RESTORE_DEFAULT_ON
 
 text:
   - platform: tailscale
