@@ -241,7 +241,11 @@
     var h = '<section class="card top"><div class="soc"><div class="big">' + (soc === null ? '--' : Math.round(soc)) + '%</div>' +
       '<div class="tr">' + esc(tr.t) + (tr.dir ? '<span class="dir ' + (tr.dir < 0 ? 'dn' : 'up') + '"><svg viewBox="0 0 24 24" width="30" height="30"><circle cx="12" cy="12" r="12" fill="#fff"/><path d="' +
       (tr.dir < 0 ? 'M12 5v12m-5-5l5 5 5-5' : 'M12 19V7m-5 5l5-5 5 5') + '" stroke="' + (tr.dir < 0 ? '#F44336' : '#4CAF50') + '" stroke-width="2.6" fill="none"/></svg></span>' : '') + '</div></div>' +
-      battery(soc) + '<div class="srcs">' + ic('car', 40) + ic('sun', 40) + ic('plug', 40) + '</div></section>';
+      battery(soc) + '<div class="srcs">' +
+      // Lit while that source is charging: DC (12 V vehicle), solar, AC (240 V)
+      ic('car', 40, on(/dc input active/i) ? 'act' : 'off') +
+      ic('sun', 40, on(/solar input active/i) ? 'act' : 'off') +
+      ic('plug', 40, on(/ac input active/i) ? 'act' : 'off') + '</div></section>';
 
     var t1 = num(/tank 1 level/i), t2 = num(/tank 2 level/i);
     if (t1 !== null || t2 !== null) {
@@ -728,7 +732,7 @@
     'main{flex:1;overflow-y:auto;padding:16px 16px 20px;-webkit-overflow-scrolling:touch}.card{background:var(--card);border-radius:12px;box-shadow:var(--sh);padding:22px 20px;margin-bottom:16px}' +
     '.top{display:flex;align-items:center;justify-content:space-between;padding:26px 24px}.soc{flex:1;text-align:center}.big{font-size:54px;font-weight:300;line-height:1}' +
     '.tr{margin-top:14px;font-size:24px;display:flex;align-items:center;justify-content:center;gap:10px;min-height:32px}.dir{display:inline-flex}' +
-    '.batt{width:104px;height:150px;margin:0 22px}.srcs{display:flex;flex-direction:column;gap:22px;align-items:center}.srcs svg{display:block}' +
+    '.batt{width:104px;height:150px;margin:0 22px}.srcs{display:flex;flex-direction:column;gap:22px;align-items:center}.srcs svg{display:block;transition:opacity .3s,color .3s}.srcs .off{opacity:.25}.srcs .act{color:var(--g)}' +
     '.tanks{display:flex;justify-content:space-around;padding:20px 8px}.tk{text-align:center;width:48%}.tk svg{width:100%;max-width:200px;display:block;margin:0 auto}.tl{font-size:20px;margin-top:6px}' +
     '.flow{width:100%;display:block}.flow text{font-family:inherit}' +
     '.srcb{padding:22px 18px}.src{display:flex;align-items:center;gap:20px;margin:14px 0}.src svg{flex:none}.trk{flex:1;max-width:215px;height:24px;border:2px solid #fff;border-radius:12px;overflow:hidden}.trk i{display:block;height:100%;background:var(--g)}' +
