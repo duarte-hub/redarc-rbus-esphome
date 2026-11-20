@@ -138,6 +138,22 @@ text:
     entity_category: config
     set_action:
       - lambda: id(redarc_hub_1).set_remote_mac(x);
+  # How often the sensors report over Zigbee, per kind of value: minimum change, then the minimum and
+  # maximum seconds between reports. V volts, A amps, W watts, P percent (SoC, tanks), T temperature,
+  # M time remaining (minutes), S signal (dBm). Set on the web UI's ESP page; empty restores the defaults.
+  - platform: template
+    name: "TVMS 1 Zigbee Reporting"
+    id: zigbee_reporting
+    mode: text
+    restore_value: true
+    initial_value: "V:0.2,30,300;A:0.5,30,300;W:20,30,300;P:1,30,600;T:0.5,30,600;M:10,60,600;S:5,60,600"
+    max_length: 120
+    entity_category: config
+    icon: mdi:timer-cog-outline
+    set_action:
+      - lambda: id(zigbee_reporting).publish_state(redarc_rbus::zigbee_reporting_set(x));
+    on_value:
+      - lambda: redarc_rbus::zigbee_reporting_set(x);
 
 sensor:
   - platform: zigbee_link

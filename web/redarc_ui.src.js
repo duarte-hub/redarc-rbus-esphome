@@ -412,6 +412,58 @@
     });
     return h;
   }
+  // Zigbee report settings: one "Zigbee Reporting" text entity holding "V:0.2,30,300;A:...".
+  // [key, title, unit of the change, which values use it]
+  var ZR = [
+    ['V', 'Voltage', 'V', 'Battery, solar, DC and AC input voltage'],
+    ['A', 'Current', 'A', 'Battery, load, solar, charger, DC and AC current'],
+    ['W', 'Power', 'W', 'Battery, solar and inverter power'],
+    ['P', 'Percent', '%', 'State of charge, tank levels'],
+    ['T', 'Temperature', '°C', 'Battery temperature'],
+    ['M', 'Time remaining', 'min', 'Battery time remaining'],
+    ['S', 'Signal', 'dB', 'Bluetooth and Wi-Fi signal']
+  ];
+  var zrEdit = {};   // "V0" -> what was typed, kept across re-renders until saved
+  function zrParse(s) {
+    var o = {};
+    String(s || '').split(';').forEach(function (p) {
+      var m = /^\s*([A-Za-z])\s*:\s*([^,]+),\s*([^,]+),\s*(.+)$/.exec(p);
+      if (m) o[m[1].toUpperCase()] = [m[2].trim(), m[3].trim(), m[4].trim()];
+    });
+    return o;
+  }
+  function zrForm(e) {
+    var cur = zrParse(e.state);
+    var rows = ZR.map(function (g) {
+      var c = cur[g[0]] || ['', '', ''];
+      function inp(i, unit) {
+        var k = g[0] + i, v = zrEdit[k] !== undefined ? zrEdit[k] : c[i];
+        return '<label><input id="zr-' + k + '" inputmode="decimal" autocomplete="off" value="' + esc(v) + '"><em>' + unit + '</em></label>';
+      }
+      return '<div class="zrr"><div class="zrh"><b>' + g[1] + '</b><span class="mut">' + g[3] + '</span></div>' +
+        '<div class="zrc">' + inp(0, g[2]) + inp(1, 's') + inp(2, 's') + '</div></div>';
+    }).join('');
+    return '<p class="mut zbn">Each kind of value is sent when it has changed by at least the first number, but no more often ' +
+      'than the minimum interval, and at least every maximum interval even if it has not changed. Binary inputs and ' +
+      'switches always report at once.</p>' +
+      '<div class="zrc zrcap"><span>Change</span><span>Min interval</span><span>Max interval</span></div>' + rows +
+      '<div class="pbtn"><button class="big-btn zb" data-act="zrdef" data-n="' + esc(e.name) + '">Defaults</button>' +
+      '<button class="big-btn" data-act="zrsave" data-n="' + esc(e.name) + '">Save</button></div>';
+  }
+  // The settings text from the form, or an error message.
+  function zrText(e) {
+    var cur = zrParse(e.state), out = [], bad = '';
+    ZR.forEach(function (g) {
+      var c = cur[g[0]] || ['', '', ''];
+      var v = [0, 1, 2].map(function (i) { var k = g[0] + i; return String(zrEdit[k] !== undefined ? zrEdit[k] : c[i]).trim(); });
+      var ch = Number(v[0]), mn = Number(v[1]), mx = Number(v[2]);
+      if (!(v[0] !== '' && ch >= 0) || !(v[1] !== '' && mn >= 0 && mn <= 86400 && Math.floor(mn) === mn) ||
+          !(v[2] !== '' && mx >= 1 && mx <= 86400 && Math.floor(mx) === mx)) { bad = bad || g[1]; return; }
+      out.push(g[0] + ':' + ch + ',' + mn + ',' + Math.max(mn, mx));
+    });
+    return bad ? { err: 'Check the ' + bad.toLowerCase() + ' numbers: a change of 0 or more, and whole seconds (max at least 1).' }
+               : { text: out.join(';') };
+  }
   function cfg() {
     var h = cardc('Device',
       crow('Address', location.host) + crow('Uptime', fmtUp(num(/^(esp )?uptime$/i))) +
@@ -455,6 +507,8 @@
       h += cardc('Zigbee', zb + '<button class="big-btn zb' + (zbArm ? ' arm' : '') + '" data-act="zigbee">' + (zbArm ? 'Tap again to confirm' : 'Zigbee Pair') + '</button>' +
         '<p class="mut zbn">Leaves the current Zigbee network and searches for a new one. Turn on <i>permit join</i> in Zigbee2MQTT or ZHA first.</p>');
     }
+    var zr = find(/zigbee reporting$/i, 'text');
+    if (zr) h += cardc('Zigbee reporting', zrForm(zr));
 
     var vpn = find(/^vpn connected$/i, 'binary_sensor');
     if (vpn) {
@@ -503,6 +557,7 @@
   document.addEventListener('input', function (ev) {
     if (ev.target.id === 'vpnkey') { vkeyVal = ev.target.value; return; }
     if (ev.target.id === 'macin') { macVal = ev.target.value; return; }
+    if (ev.target.id && ev.target.id.indexOf('zr-') === 0) { zrEdit[ev.target.id.slice(3)] = ev.target.value; return; }
     if (ev.target.id !== 'code') return;
     codeVal = ev.target.value.replace(/\D/g, '').slice(0, 6);
     if (codeVal.length === 6) sendCode();   // the Display only waits a few seconds: send on the 6th digit
@@ -625,6 +680,16 @@
       else post('text', n, 'set', '?value=' + encodeURIComponent(mv))
         .then(function (r) { macVal = ''; if (mel) mel.value = ''; say(r.ok ? 'Display MAC saved. Connecting to it now.' : 'Could not set the MAC.'); })
         .catch(function () { say('Could not reach the unit.'); });
+    } else if (a === 'zrsave' || a === 'zrdef') {
+      var zre = find(/zigbee reporting$/i, 'text'), zt = a === 'zrdef' ? { text: '' } : (zre ? zrText(zre) : null);
+      if (!zre || !zt) say('This firmware has no Zigbee reporting settings.');
+      else if (zt.err) say(zt.err);
+      else post('text', n, 'set', '?value=' + encodeURIComponent(zt.text))
+        .then(function (r) {
+          if (r.ok) zrEdit = {};
+          say(!r.ok ? 'Could not save the settings.' : a === 'zrdef' ? 'Back to the default report settings.' : 'Saved. Zigbee reports use these settings now.');
+        })
+        .catch(function () { say('Could not reach the unit.'); });
     } else if (a === 'code') {
       sendCode();
     }
@@ -693,6 +758,10 @@
     '.sm{background:var(--g);color:#000;border-radius:18px;padding:8px 16px;font-weight:600}.big-btn{width:100%;margin-top:18px;background:var(--g);color:#000;border-radius:28px;padding:15px;font-size:20px;font-weight:600}.warn{color:#EF5350}' +
     '.cfg a{color:var(--g)}.prog{height:14px;border-radius:7px;background:var(--ln);overflow:hidden;margin:16px 0 0}.prog i{display:block;height:100%;background:var(--g);transition:width .4s}' +
     '.fwlog{max-height:220px;overflow:auto;background:#111;color:#cfd8dc;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;padding:10px 12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;margin:12px 0 6px}.fwclr{margin-top:4px}' +
+    '.zrr{padding:10px 0;border-bottom:1px solid var(--ln)}.zrh{display:flex;flex-direction:column;gap:2px}.zrh span{font-size:13px}' +
+    '.zrc{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}.zrcap{margin-top:4px;font-size:12px;color:var(--mut);text-align:center}' +
+    '.zrc label{display:flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--ln);border-radius:8px;padding:6px 8px}' +
+    '.cfg .zrc input{flex:1;min-width:0;width:100%;background:none;border:0;padding:0;font-size:16px;text-align:right}.zrc em{font-style:normal;color:var(--mut);font-size:13px}' +
     '.toast{position:absolute;left:16px;right:16px;bottom:110px;background:#E0E0E0;color:#212121;border-radius:10px;padding:14px 16px;z-index:9;box-shadow:var(--sh)}';
 
   function boot() {

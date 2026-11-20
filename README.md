@@ -481,9 +481,29 @@ coordinator.
 The values are sent to the coordinator as attribute reports without bindings
 (`zigbee_sync.cpp`): the ESP32 binding table holds 16 entries, fewer than the values exposed, so
 *configure reporting* in Zigbee2MQTT / ZHA fails (TABLE_FULL) for the rest. You do not need to set
-up reporting. Binary inputs and switches are sent at once when they change, sensors on a change
-of at least their resolution and no more than every 10 s, and everything at least every
-5 minutes and after each join (which also corrects flags the stack restored from flash at boot).
+up reporting (and Zigbee2MQTT's *Reporting* tab has no effect on this device). Binary inputs and
+switches are sent at once when they change and at least every 5 minutes; everything is sent again
+after each join (which also corrects flags the stack restored from flash at boot).
+
+Sensors work like Zigbee reporting, with three settings per kind of value: a minimum change, a
+minimum interval and a maximum interval. A sensor is sent when it has moved by at least the change,
+but no more often than the minimum interval, and at least every maximum interval even if it has not
+changed. Set them on the web page's ESP tab (*Zigbee reporting*) or in the `Zigbee Reporting` text
+entity; they are kept in flash.
+
+| Kind (key) | Values | Default change | Min / max interval |
+|---|---|---|---|
+| Voltage (`V`) | battery, solar, DC and AC input voltage | 0.2 V | 30 s / 5 min |
+| Current (`A`) | battery, load, solar, charger, DC and AC current | 0.5 A | 30 s / 5 min |
+| Power (`W`) | battery, solar and inverter power | 20 W | 30 s / 5 min |
+| Percent (`P`) | state of charge, tank levels | 1 % | 30 s / 10 min |
+| Temperature (`T`) | battery temperature | 0.5 °C | 30 s / 10 min |
+| Time (`M`) | battery time remaining | 10 min | 60 s / 10 min |
+| Signal (`S`) | Bluetooth and Wi-Fi signal | 5 dB | 60 s / 10 min |
+
+The text form is `V:0.2,30,300;A:0.5,30,300;...` (key: change, minimum and maximum seconds); an
+empty value restores the defaults. A change of 0 sends every change (still limited by the minimum
+interval). The kind is picked from the sensor's unit when the firmware is built.
 
 ### Zigbee signal strength
 

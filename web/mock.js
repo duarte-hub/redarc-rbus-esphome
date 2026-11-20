@@ -2,6 +2,7 @@
  * previewed in a browser (python3 -m http.server in this folder, then open dev.html). */
 (function () {
   var P = 'TVMS 1 ';
+  var ZR_DEF = 'V:0.2,30,300;A:0.5,30,300;W:20,30,300;P:1,30,600;T:0.5,30,600;M:10,60,600;S:5,60,600';
   var S = [
     ['sensor', 'Battery SoC', 88], ['sensor', 'Battery Voltage', 13.3], ['sensor', 'Battery Temperature', 23],
     ['sensor', 'Battery Current', -0.2], ['sensor', 'Load Current', 0.2], ['sensor', 'Charger Output Current', 0],
@@ -23,7 +24,8 @@
     ['switch', 'VPN Enabled', true], ['text', 'VPN Auth Key Override', ''],
     ['select', 'Charging Mode', 'Touring Mode'],
     ['number', 'Pairing Code', 123456],
-    ['text', 'Display MAC', 'D4:CA:6E:00:00:01'], ['button', 'Check for Update', null]
+    ['text', 'Display MAC', 'D4:CA:6E:00:00:01'], ['button', 'Check for Update', null],
+    ['text', 'Zigbee Reporting', ZR_DEF]
   ];
   ['Main Light', 'Front Light', 'Left Light', 'Right Light', 'Tent Light', 'Accessories', 'Compressor', 'Stereo & 2-way', 'Fridge', 'Inverter', 'Water Pump']
     .forEach(function (n) { S.push(['switch', n, n === 'Accessories']); });
@@ -69,6 +71,8 @@
   window.fetch = function (url, o) {
     console.log('[mock]', (o && o.method) || 'GET', decodeURIComponent(url));
     if (/\/update\/.*\/install/.test(url)) setTimeout(fakeInstall, 100);
+    var zr = /Zigbee%20Reporting\/set\?value=(.*)$/.exec(url);
+    if (zr) setTimeout(function () { var v = decodeURIComponent(zr[1]) || ZR_DEF; st('text/' + P + 'Zigbee Reporting', v, v); }, 100);
     if (/Check%20for%20Update\/press/.test(url)) setTimeout(function () { st('update/' + P + 'Firmware', 'UPDATE AVAILABLE', latest); }, 300);
     return Promise.resolve({
       ok: true,

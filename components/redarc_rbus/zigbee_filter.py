@@ -14,7 +14,7 @@ import logging
 import re
 
 import esphome.codegen as cg
-from esphome.const import CONF_ACCURACY_DECIMALS, CONF_ID, CONF_NAME, CONF_REPORT
+from esphome.const import CONF_ID, CONF_NAME, CONF_REPORT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,7 +120,10 @@ def _wrap(zigbee, fn_name):
     setattr(zigbee, fn_name, filtered)
 
 
-# Exposed entities, for zigbee_sync: id(entity config) -> (kind, attribute id, entity id, accuracy decimals)
+# Exposed entities, for zigbee_sync: id(entity config) -> (kind, attribute id, entity id, unit)
+# Sensor report settings are per kind of value, picked by unit (ReportGroup in zigbee_sync.h):
+# volts, amps, watts, percent, temperature, time, signal. Anything else uses the percent settings.
+_GROUPS = {"V": 0, "A": 1, "W": 2, "%": 3, "°C": 4, "min": 5, "h": 5, "s": 5, "dBm": 6, "dB": 6}
 _KINDS = {
     "validate_sensor_esp32": "sensor",
     "validate_binary_sensor_esp32": "binary_sensor",
@@ -151,7 +154,7 @@ def _record(fn_name, config):
             entries = CORE.data.setdefault("redarc_rbus_zigbee_sync", {})
             # Counted now: ESPHome sizes its component list from the IDs seen while validating
             CORE.component_ids.add(_SYNC_ID)
-            entries[id(config)] = (kind, attr["id"], config[CONF_ID], config.get(CONF_ACCURACY_DECIMALS))
+            entries[id(config)] = (kind, attr["id"], config[CONF_ID], config.get("unit_of_measurement"))
             return
 
 
@@ -172,12 +175,11 @@ async def sync_to_code():
 
     var = cg.new_Pvariable(ID(_SYNC_ID, is_declaration=True, type=sync_t), zb)
     await cg.register_component(var, {})
-    for kind, attr_id, entity_id, decimals in entries.values():
+    for kind, attr_id, entity_id, unit in entries.values():
         attr = await cg.get_variable(attr_id)
         entity = await cg.get_variable(entity_id)
         if kind == "sensor":
-            min_change = 10.0 ** -(decimals if decimals is not None else 0)
-            cg.add(var.add_sensor(attr, entity, min_change))
+            cg.add(var.add_sensor(attr, entity, _GROUPS.get(unit, 3)))
         elif kind == "binary_sensor":
             cg.add(var.add_binary_sensor(attr, entity))
         elif kind == "number":

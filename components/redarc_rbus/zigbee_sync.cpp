@@ -1,7 +1,104 @@
 #include "zigbee_sync.h"
 
-#if defined(USE_ESP32) && defined(USE_ZIGBEE)
+#include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+namespace esphome::redarc_rbus {
+
+struct GroupCfg {
+  char key;
+  float change;     // report when the value moved by at least this much...
+  uint32_t min_s;   // ...but no more often than this
+  uint32_t max_s;   // and at least this often, changed or not
+};
+// Defaults; keys in ReportGroup order
+static GroupCfg g_groups[RG_COUNT] = {
+    {'V', 0.2f, 30, 300},  {'A', 0.5f, 30, 300}, {'W', 20.0f, 30, 300}, {'P', 1.0f, 30, 600},
+    {'T', 0.5f, 30, 600},  {'M', 10.0f, 60, 600}, {'S', 5.0f, 60, 600},
+};
+static const GroupCfg G_DEFAULTS[RG_COUNT] = {
+    {'V', 0.2f, 30, 300},  {'A', 0.5f, 30, 300}, {'W', 20.0f, 30, 300}, {'P', 1.0f, 30, 600},
+    {'T', 0.5f, 30, 600},  {'M', 10.0f, 60, 600}, {'S', 5.0f, 60, 600},
+};
+
+static std::string format_groups(const GroupCfg *g) {
+  std::string out;
+  char buf[40];
+  for (int i = 0; i < RG_COUNT; i++) {
+    snprintf(buf, sizeof(buf), "%s%c:%g,%u,%u", i ? ";" : "", g[i].key, g[i].change, (unsigned) g[i].min_s,
+             (unsigned) g[i].max_s);
+    out += buf;
+  }
+  return out;
+}
+
+static const char *skip_spaces(const char *p) {
+  while (*p == ' ')
+    p++;
+  return p;
+}
+
+std::string zigbee_reporting_set(const std::string &text) {
+  const char *p = text.c_str();
+  while (*p == ' ')
+    p++;
+  if (!*p) {
+    memcpy(g_groups, G_DEFAULTS, sizeof(g_groups));
+    return format_groups(g_groups);
+  }
+  while (*p) {
+    // One entry: key ':' change ',' min ',' max; entries are separated by ';'
+    while (*p == ' ' || *p == ';')
+      p++;
+    if (!*p)
+      break;
+    const char key = (char) toupper((unsigned char) *p++);
+    while (*p == ' ')
+      p++;
+    bool ok = false;
+    float change = 0;
+    unsigned long mn = 0, mx = 0;
+    if (*p == ':') {
+      char *end;
+      const char *q = p + 1;
+      change = strtof(q, &end);
+      if (end != q && *skip_spaces(end) == ',') {
+        q = skip_spaces(end) + 1;
+        mn = strtoul(q, &end, 10);
+        if (end != q && *skip_spaces(end) == ',') {
+          q = skip_spaces(end) + 1;
+          mx = strtoul(q, &end, 10);
+          if (end != q) {
+            ok = true;
+            p = end;
+          }
+        }
+      }
+    }
+    if (ok && std::isfinite(change) && change >= 0 && mn <= 86400 && mx >= 1 && mx <= 86400) {
+      for (auto &g : g_groups) {
+        if (g.key == key) {
+          g.change = change;
+          g.min_s = mn;
+          g.max_s = mx < mn ? mn : mx;
+        }
+      }
+    }
+    // Skip whatever is left of this entry
+    const char *n = strchr(p, ';');
+    if (n == nullptr)
+      break;
+    p = n;
+  }
+  return format_groups(g_groups);
+}
+
+}  // namespace esphome::redarc_rbus
+
+#if defined(USE_ESP32) && defined(USE_ZIGBEE)
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
@@ -11,8 +108,7 @@ static const char *const TAG = "redarc_rbus.zigbee";
 
 static constexpr uint32_t TICK_MS = 250;
 static constexpr uint8_t REPORTS_PER_TICK = 3;          // at most 12 reports a second
-static constexpr uint32_t SENSOR_MIN_MS = 10 * 1000;    // a changing sensor at most every 10 s
-static constexpr uint32_t REFRESH_MS = 5 * 60 * 1000;   // everything at least every 5 minutes
+static constexpr uint32_t REFRESH_MS = 5 * 60 * 1000;   // binary inputs and switches at least every 5 minutes
 static constexpr uint32_t JOIN_SETTLE_MS = 5 * 1000;    // after a join: let the stack finish starting up first
 
 void ZigbeeSync::setup() {
@@ -104,10 +200,16 @@ void ZigbeeSync::tick_() {
       continue;
     const uint32_t age = now - e.sent_ms;
     bool due;
-    if (!e.has_sent || age >= REFRESH_MS) {
+    if (e.kind == KIND_SENSOR) {
+      const GroupCfg &g = g_groups[e.group < RG_COUNT ? e.group : static_cast<uint8_t>(RG_PCT)];
+      if (!e.has_sent || age >= g.max_s * 1000u) {
+        due = true;
+      } else {
+        const float moved = std::fabs(v - e.sent);
+        due = age >= g.min_s * 1000u && (g.change > 0 ? moved >= g.change : moved > 0);
+      }
+    } else if (!e.has_sent || age >= REFRESH_MS) {
       due = true;
-    } else if (e.kind == KIND_SENSOR) {
-      due = std::fabs(v - e.sent) >= e.min_change && age >= SENSOR_MIN_MS;
     } else {
       due = v != e.sent;
     }
@@ -129,8 +231,9 @@ void ZigbeeSync::tick_() {
 void ZigbeeSync::dump_config() {
   ESP_LOGCONFIG(TAG,
                 "Zigbee reports to the coordinator\n"
-                "  Values: %u",
-                static_cast<unsigned>(this->entries_.size()));
+                "  Values: %u\n"
+                "  Sensor settings: %s",
+                static_cast<unsigned>(this->entries_.size()), format_groups(g_groups).c_str());
 }
 
 }  // namespace esphome::redarc_rbus
