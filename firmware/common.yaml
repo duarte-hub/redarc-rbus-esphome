@@ -108,7 +108,7 @@ zigbee:
 
 external_components:
   - source: github://duarte-hub/redarc-rbus-esphome@${ref}
-    components: [redarc_rbus, zigbee_link]
+    components: [redarc_rbus, zigbee_link, tailscale]   # tailscale: only used by the C5 build
     refresh: 0s
 
 esp32_ble_tracker:

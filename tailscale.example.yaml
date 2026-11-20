@@ -1,3 +1,6 @@
+# The ESP32-C5 firmware already includes Tailscale (firmware/tailscale.yaml); this example is for
+# your own config, for example on a C6.
+#
 # Tailscale for the RedVision ESP (ESP32-C6, no PSRAM). The client is part of this repository
 # (components/tailscale, see components/tailscale/UPSTREAM.md). Put this next to your device
 # yaml as common/tailscale.yaml (a subfolder keeps the ESPHome dashboard from listing it as a

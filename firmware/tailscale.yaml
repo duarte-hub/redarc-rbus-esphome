@@ -1,0 +1,80 @@
+# Tailscale VPN, part of the ESP32-C5 build (redarc-camper-c5.yaml includes this file).
+#
+# The unit joins your tailnet as its own node (its own 100.x address), so the web page and the
+# Home Assistant API are reachable from anywhere. Nothing happens until an auth key is entered:
+# paste one into the Tailscale card on the web page's ESP tab (or the "VPN Auth Key Override"
+# entity in Home Assistant). It is saved on the unit, not in the firmware, and survives reboots
+# and updates. Use a tagged, pre-approved key with a minimal ACL scope; anyone who can read the
+# chip's flash can read it.
+#
+# The client is components/tailscale (vendored, see components/tailscale/UPSTREAM.md). On the C5
+# its task stacks, queues and buffers live in PSRAM: internal RAM is what Wi-Fi, Bluetooth and
+# Zigbee need. If it crashes the unit 3 times in a row soon after starting, it stays off until
+# Reconnect is pressed (the "VPN Setup Hint" says so).
+#
+# Not in the C6 build: 4 MB of flash and no PSRAM leave no room for it next to Zigbee and BLE.
+
+esp32:
+  framework:
+    sdkconfig_options:
+      # Sockets for ESPHome (API, web server, mDNS) plus the VPN (control server, DERP relay,
+      # WireGuard/disco and STUN). A value set here is taken as is by ESPHome.
+      CONFIG_LWIP_MAX_SOCKETS: "24"
+      # WireGuard encrypts in the TCP/IP task.
+      CONFIG_LWIP_TCPIP_TASK_STACK_SIZE: "6144"
+      # Peers cached in NVS for a fast reconnect after a reboot (default 64: a 7.5 KB blob).
+      CONFIG_ML_NVS_MAX_PEERS: "16"
+
+time:
+  # The control server needs a correct clock (certificates, key expiry).
+  - platform: sntp
+    id: tailscale_time
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
+
+tailscale:
+  # No auth_key here: it is entered on the web page and kept on the unit.
+  hostname: ${name}
+  max_peers: 16
+  # PSRAM buffer for the tailnet map; 128 KB is plenty below ~50 devices.
+  netmap_buffer_kb: 128
+
+# The entities the web page's Tailscale card uses.
+binary_sensor:
+  - platform: tailscale
+    connected:
+      name: "VPN Connected"
+
+text_sensor:
+  - platform: tailscale
+    ip_address:
+      name: "VPN IP"
+    vpn_hostname:
+      name: "VPN Hostname"
+    peer_status:
+      name: "VPN Peer Status"
+    setup_status:
+      name: "VPN Setup Hint"
+    auth_key_status:
+      name: "VPN Auth Key Source"
+
+switch:
+  - platform: tailscale
+    vpn_enabled:
+      name: "VPN Enabled"
+
+text:
+  - platform: tailscale
+    auth_key:
+      name: "VPN Auth Key Override"
+      mode: password
+
+button:
+  - platform: tailscale
+    reconnect:
+      name: "VPN Reconnect"
+  # The web page's "Restart ESP" button.
+  - platform: restart
+    name: "TVMS 1 Restart"

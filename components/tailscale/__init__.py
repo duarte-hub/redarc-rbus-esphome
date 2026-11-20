@@ -156,10 +156,16 @@ async def to_code(config):
     override_h = f"{ml_base}/ml_config_override.h"
 
     # Required ESP-IDF sdkconfig for Tailscale/WireGuard
-    add_idf_sdkconfig_option("CONFIG_SPIRAM", True)
-    add_idf_sdkconfig_option("CONFIG_SPIRAM_IGNORE_NOTFOUND", True)
-    add_idf_sdkconfig_option("CONFIG_SPIRAM_MODE_OCT", True)
-    add_idf_sdkconfig_option("CONFIG_SPIRAM_SPEED_80M", True)
+    # redarc-rbus-esphome: only when the YAML has no `psram:` block. With one (the ESP32-C5 build:
+    # quad PSRAM) ESPHome's psram component already sets these, and forcing octal mode here would
+    # contradict it.
+    from esphome.core import CORE
+
+    if "psram" not in CORE.config:
+        add_idf_sdkconfig_option("CONFIG_SPIRAM", True)
+        add_idf_sdkconfig_option("CONFIG_SPIRAM_IGNORE_NOTFOUND", True)
+        add_idf_sdkconfig_option("CONFIG_SPIRAM_MODE_OCT", True)
+        add_idf_sdkconfig_option("CONFIG_SPIRAM_SPEED_80M", True)
     add_idf_sdkconfig_option("CONFIG_LWIP_IP_FORWARD", True)
     add_idf_sdkconfig_option("CONFIG_LWIP_IPV6", True)
     add_idf_sdkconfig_option("CONFIG_LWIP_CHECK_THREAD_SAFETY", False)

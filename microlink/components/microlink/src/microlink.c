@@ -22,6 +22,9 @@
 #include <time.h>
 #include "lwip/sockets.h"
 #include "wireguard-platform.h"
+#include "esp_cpu.h"
+#include "esp_memory_utils.h"
+#include "freertos/idf_additions.h"
 
 #ifdef CONFIG_ML_ENABLE_CELLULAR
 #include "ml_cellular.h"
@@ -40,6 +43,123 @@ static const char *TAG = "microlink";
 
 /* X25519 from ml_x25519.h */
 #include "ml_x25519.h"
+
+/* ============================================================================
+ * Task stacks and queues in PSRAM (redarc-rbus-esphome)
+ * ========================================================================== */
+
+/* Five tasks with 6-12 KB stacks are more internal RAM than an ESP32-C5 has free once Wi-Fi,
+ * Bluetooth and Zigbee are up, so with PSRAM their stacks go there. Internal RAM is still used
+ * when there is no PSRAM, or none left. */
+#if CONFIG_SPIRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#define ML_EXT_STACKS 1
+#else
+#define ML_EXT_STACKS 0
+#endif
+
+BaseType_t ml_task_create(TaskFunction_t fn, const char *name, uint32_t stack_bytes, void *arg,
+                          UBaseType_t prio, TaskHandle_t *handle, BaseType_t core, bool *in_psram) {
+    *in_psram = false;
+#if ML_EXT_STACKS
+    if (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) >= stack_bytes &&
+        xTaskCreatePinnedToCoreWithCaps(fn, name, stack_bytes, arg, prio, handle, core,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
+        *in_psram = true;
+        return pdPASS;
+    }
+#endif
+    return xTaskCreatePinnedToCore(fn, name, stack_bytes, arg, prio, handle, core);
+}
+
+/* A task created by ml_task_create() ends with this instead of vTaskDelete(NULL). A stack
+ * allocated "with caps" has to be freed by vTaskDeleteWithCaps(), which for the calling task
+ * itself starts a helper task (and aborts if there is no RAM for it). Such a task parks here
+ * instead, and microlink_stop() deletes it once every task has signed off. */
+void ml_task_delete_self(void) {
+#if ML_EXT_STACKS
+    if (esp_ptr_external_ram(pxTaskGetStackStart(NULL))) {
+        for (;;) vTaskSuspend(NULL);
+    }
+#endif
+    vTaskDelete(NULL);
+}
+
+/* Frees the parked tasks with stacks in PSRAM (see ml_task_delete_self()). Only called once
+ * every task has signed off. */
+static void free_parked_tasks(microlink_t *ml) {
+#if ML_EXT_STACKS
+    TaskHandle_t *tasks[] = { &ml->net_io_task, &ml->derp_tx_task, &ml->derp_rx_task,
+                              &ml->coord_task, &ml->wg_mgr_task };
+    for (int i = 0; i < 5; i++) {
+        TaskHandle_t t = *tasks[i];
+        if (!t || !(ml->ext_stack_mask & (1u << i))) continue;
+        /* It signed off just before parking: give it a moment to get there. */
+        for (int w = 0; w < 50 && eTaskGetState(t) != eSuspended; w++) vTaskDelay(pdMS_TO_TICKS(10));
+        if (eTaskGetState(t) == eSuspended) {
+            vTaskDeleteWithCaps(t);
+        } else {
+            ESP_LOGE(TAG, "Task %d did not park; its stack is leaked", i);
+        }
+    }
+#endif
+    ml->ext_stack_mask = 0;
+}
+
+/* Queues are only used between tasks (never from an interrupt), so they can live in PSRAM. */
+QueueHandle_t ml_queue_create(UBaseType_t length, UBaseType_t item_size) {
+#if CONFIG_SPIRAM
+    QueueHandle_t q = xQueueCreateWithCaps(length, item_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (q) return q;
+#endif
+    return xQueueCreate(length, item_size);
+}
+
+void ml_queue_delete(QueueHandle_t q) {
+    if (!q) return;
+#if CONFIG_SPIRAM
+    if (esp_ptr_external_ram(q)) {
+        vQueueDeleteWithCaps(q);
+        return;
+    }
+#endif
+    vQueueDelete(q);
+}
+
+/* Flash operations turn the cache off, and with it PSRAM: a task whose stack is in PSRAM must
+ * not run one (spi_flash asserts "stack is sane"). Such a task hands the work to a short-lived
+ * helper task with an internal stack and waits for it. Returns false if the helper could not be
+ * started (the work was not done). */
+typedef struct {
+    void (*fn)(void *);
+    void *arg;
+    SemaphoreHandle_t done;
+} ml_flash_job_t;
+
+static void ml_flash_job_task(void *p) {
+    ml_flash_job_t *job = (ml_flash_job_t *)p;
+    job->fn(job->arg);
+    xSemaphoreGive(job->done);
+    vTaskDelete(NULL);
+}
+
+bool ml_flash_safe(void (*fn)(void *), void *arg) {
+#if CONFIG_SPIRAM
+    if (esp_ptr_external_ram((const void *)esp_cpu_get_sp())) {
+        ml_flash_job_t job = { .fn = fn, .arg = arg, .done = xSemaphoreCreateBinary() };
+        if (!job.done) return false;
+        if (xTaskCreatePinnedToCore(ml_flash_job_task, "ml_flash", 3584, &job,
+                                    uxTaskPriorityGet(NULL), NULL, tskNO_AFFINITY) != pdPASS) {
+            vSemaphoreDelete(job.done);
+            return false;
+        }
+        xSemaphoreTake(job.done, portMAX_DELAY);
+        vSemaphoreDelete(job.done);
+        return true;
+    }
+#endif
+    fn(arg);
+    return true;
+}
 
 /* ============================================================================
  * Key Management (loaded once at init, read-only after)
@@ -121,21 +241,33 @@ static esp_err_t load_or_generate_keys(microlink_t *ml) {
     return ESP_OK;
 }
 
+typedef struct {
+    microlink_t *ml;
+    esp_err_t err;
+} ml_key_save_t;
+
+/* Runs through ml_flash_safe() (the coord task may have its stack in PSRAM). No logging here:
+ * it may run on the helper task's small stack. */
+static void save_node_key(void *arg) {
+    ml_key_save_t *s = (ml_key_save_t *)arg;
+    nvs_handle_t nvs;
+    s->err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (s->err != ESP_OK) return;
+    nvs_set_blob(nvs, NVS_KEY_WG_PRI, s->ml->wg_private_key, 32);
+    nvs_set_blob(nvs, NVS_KEY_WG_PUB, s->ml->wg_public_key, 32);
+    s->err = nvs_commit(nvs);
+    nvs_close(nvs);
+}
+
 void ml_rotate_node_key(microlink_t *ml) {
     generate_keypair(ml->wg_private_key, ml->wg_public_key);
     ESP_LOGI(TAG, "Generated a new node key (nodekey:%02x%02x%02x%02x...)",
              ml->wg_public_key[0], ml->wg_public_key[1], ml->wg_public_key[2], ml->wg_public_key[3]);
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (err != ESP_OK) {
+    ml_key_save_t save = { .ml = ml, .err = ESP_FAIL };
+    if (!ml_flash_safe(save_node_key, &save) || save.err != ESP_OK) {
         /* Same as at boot: the key still works, it just does not survive a reboot. */
-        ESP_LOGW(TAG, "NVS open failed (%d), the new node key is not persisted", err);
-        return;
+        ESP_LOGW(TAG, "Could not save the new node key (%d); it is not persisted", (int)save.err);
     }
-    nvs_set_blob(nvs, NVS_KEY_WG_PRI, ml->wg_private_key, 32);
-    nvs_set_blob(nvs, NVS_KEY_WG_PUB, ml->wg_public_key, 32);
-    nvs_commit(nvs);
-    nvs_close(nvs);
 }
 
 /* ============================================================================
@@ -369,12 +501,12 @@ microlink_t *microlink_init(const microlink_config_t *config) {
     }
 
     /* Create queues */
-    ml->derp_tx_queue = xQueueCreate(ML_DERP_TX_QUEUE_DEPTH, sizeof(ml_derp_tx_item_t));
+    ml->derp_tx_queue = ml_queue_create(ML_DERP_TX_QUEUE_DEPTH, sizeof(ml_derp_tx_item_t));
     ml->disco_rx_queue = xQueueCreate(ML_DISCO_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));
-    ml->wg_rx_queue = xQueueCreate(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));
+    ml->wg_rx_queue = ml_queue_create(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));
     ml->stun_rx_queue = xQueueCreate(ML_STUN_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));
     ml->coord_cmd_queue = xQueueCreate(ML_COORD_CMD_QUEUE_DEPTH, sizeof(ml_coord_cmd_t));
-    ml->peer_update_queue = xQueueCreate(ML_PEER_UPDATE_QUEUE_DEPTH, sizeof(ml_peer_update_t *));
+    ml->peer_update_queue = ml_queue_create(ML_PEER_UPDATE_QUEUE_DEPTH, sizeof(ml_peer_update_t *));
 
     if (!ml->derp_tx_queue || !ml->disco_rx_queue || !ml->wg_rx_queue ||
         !ml->stun_rx_queue || !ml->coord_cmd_queue || !ml->peer_update_queue) {
@@ -459,17 +591,21 @@ skip_bsd_socket:
 
     /* Create tasks */
     BaseType_t ret;
+    bool in_psram = false;
+    ml->ext_stack_mask = 0;
 
-    ret = xTaskCreatePinnedToCore(ml_net_io_task, "ml_net_io", ML_TASK_NET_IO_STACK,
-                                   ml, ML_TASK_NET_IO_PRIO, &ml->net_io_task, ML_TASK_NET_IO_CORE);
+    ret = ml_task_create(ml_net_io_task, "ml_net_io", ML_TASK_NET_IO_STACK,
+                                   ml, ML_TASK_NET_IO_PRIO, &ml->net_io_task, ML_TASK_NET_IO_CORE, &in_psram);
+    if (ret == pdPASS && in_psram) ml->ext_stack_mask |= 1u << 0;
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create net_io task");
         return ESP_FAIL;
     }
     __atomic_add_fetch(&ml->tasks_alive, 1, __ATOMIC_SEQ_CST);
 
-    ret = xTaskCreatePinnedToCore(ml_derp_tx_task, "ml_derp_tx", ML_TASK_DERP_TX_STACK,
-                                   ml, ML_TASK_DERP_TX_PRIO, &ml->derp_tx_task, ML_TASK_DERP_TX_CORE);
+    ret = ml_task_create(ml_derp_tx_task, "ml_derp_tx", ML_TASK_DERP_TX_STACK,
+                                   ml, ML_TASK_DERP_TX_PRIO, &ml->derp_tx_task, ML_TASK_DERP_TX_CORE, &in_psram);
+    if (ret == pdPASS && in_psram) ml->ext_stack_mask |= 1u << 1;
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create derp_tx task");
         return ESP_FAIL;
@@ -480,24 +616,27 @@ skip_bsd_socket:
      * and TX (mbedtls_ssl_write) run concurrently on the same ssl context (one
      * reader + one writer = the documented mbedtls threading model). Same
      * stack/prio/core as the writer so the two time-slice predictably on core 0. */
-    ret = xTaskCreatePinnedToCore(ml_derp_rx_task, "ml_derp_rx", ML_TASK_DERP_TX_STACK,
-                                   ml, ML_TASK_DERP_TX_PRIO, &ml->derp_rx_task, ML_TASK_DERP_TX_CORE);
+    ret = ml_task_create(ml_derp_rx_task, "ml_derp_rx", ML_TASK_DERP_TX_STACK,
+                                   ml, ML_TASK_DERP_TX_PRIO, &ml->derp_rx_task, ML_TASK_DERP_TX_CORE, &in_psram);
+    if (ret == pdPASS && in_psram) ml->ext_stack_mask |= 1u << 2;
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create derp_rx task");
         return ESP_FAIL;
     }
     __atomic_add_fetch(&ml->tasks_alive, 1, __ATOMIC_SEQ_CST);
 
-    ret = xTaskCreatePinnedToCore(ml_coord_task, "ml_coord", ML_TASK_COORD_STACK,
-                                   ml, ML_TASK_COORD_PRIO, &ml->coord_task, ML_TASK_COORD_CORE);
+    ret = ml_task_create(ml_coord_task, "ml_coord", ML_TASK_COORD_STACK,
+                                   ml, ML_TASK_COORD_PRIO, &ml->coord_task, ML_TASK_COORD_CORE, &in_psram);
+    if (ret == pdPASS && in_psram) ml->ext_stack_mask |= 1u << 3;
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create coord task");
         return ESP_FAIL;
     }
     __atomic_add_fetch(&ml->tasks_alive, 1, __ATOMIC_SEQ_CST);
 
-    ret = xTaskCreatePinnedToCore(ml_wg_mgr_task, "ml_wg_mgr", ML_TASK_WG_MGR_STACK,
-                                   ml, ML_TASK_WG_MGR_PRIO, &ml->wg_mgr_task, ML_TASK_WG_MGR_CORE);
+    ret = ml_task_create(ml_wg_mgr_task, "ml_wg_mgr", ML_TASK_WG_MGR_STACK,
+                                   ml, ML_TASK_WG_MGR_PRIO, &ml->wg_mgr_task, ML_TASK_WG_MGR_CORE, &in_psram);
+    if (ret == pdPASS && in_psram) ml->ext_stack_mask |= 1u << 4;
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create wg_mgr task");
         return ESP_FAIL;
@@ -588,6 +727,8 @@ esp_err_t microlink_stop(microlink_t *ml) {
         }
     }
 
+    if (!ml->stop_incomplete) free_parked_tasks(ml);
+
     ml->net_io_task = NULL;
     ml->derp_tx_task = NULL;
     ml->derp_rx_task = NULL;
@@ -670,12 +811,12 @@ void microlink_destroy(microlink_t *ml) {
     }
 
     /* Delete queues */
-    if (ml->derp_tx_queue) vQueueDelete(ml->derp_tx_queue);
+    ml_queue_delete(ml->derp_tx_queue);
     if (ml->disco_rx_queue) vQueueDelete(ml->disco_rx_queue);
-    if (ml->wg_rx_queue) vQueueDelete(ml->wg_rx_queue);
+    ml_queue_delete(ml->wg_rx_queue);
     if (ml->stun_rx_queue) vQueueDelete(ml->stun_rx_queue);
     if (ml->coord_cmd_queue) vQueueDelete(ml->coord_cmd_queue);
-    if (ml->peer_update_queue) vQueueDelete(ml->peer_update_queue);
+    ml_queue_delete(ml->peer_update_queue);
 
     /* Delete event group */
     if (ml->events) vEventGroupDelete(ml->events);

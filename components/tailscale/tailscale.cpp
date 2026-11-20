@@ -21,6 +21,19 @@
 #include "nvs.h"
 #include "esp_sntp.h"
 
+// redarc-rbus-esphome: crash guard. A VPN that crashes the unit soon after it starts would
+// otherwise crash it again on every boot (the key is saved, so it starts by itself). Kept in RAM
+// that survives a reset but not a power cycle; only trusted after a crash reset.
+#include "esp_attr.h"
+#include "esp_system.h"
+static __NOINIT_ATTR uint32_t s_guard_state;    // GUARD_STARTED while the VPN runs, its first minutes
+static __NOINIT_ATTR uint32_t s_guard_crashes;  // crash resets in a row in those minutes
+static constexpr uint32_t GUARD_STARTED = 0x5653544Bu;
+static constexpr uint32_t GUARD_STABLE_MS = 10 * 60 * 1000;
+static constexpr uint32_t GUARD_MAX_CRASHES = 3;
+static const char *const GUARD_PAUSED_HINT =
+    "Paused: the unit crashed 3 times in a row soon after the VPN started. Press Reconnect to try again";
+
 namespace esphome {
 namespace tailscale {
 
@@ -74,6 +87,24 @@ void TailscaleComponent::setup() {
 #endif
   this->apply_debug_log(debug_on);
   ESP_LOGI(TAG, "Initializing Tailscale (MicroLink)...");
+
+  // redarc-rbus-esphome: count crash resets that hit while the VPN was in its first minutes.
+  {
+    const esp_reset_reason_t rr = esp_reset_reason();
+    const bool crashed = rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT;
+    uint32_t crashes = 0;
+    if (crashed && s_guard_state == GUARD_STARTED)
+      crashes = s_guard_crashes < GUARD_MAX_CRASHES ? s_guard_crashes + 1 : GUARD_MAX_CRASHES;
+    s_guard_crashes = crashes;
+    s_guard_state = 0;
+    if (crashes >= GUARD_MAX_CRASHES) {
+      this->crash_paused_ = true;
+      ESP_LOGW(TAG, "The unit crashed %u times in a row soon after the VPN started: not starting it "
+                    "until Reconnect is pressed or it is switched on again", (unsigned) crashes);
+    } else if (crashes > 0) {
+      ESP_LOGW(TAG, "Restarted after a crash soon after the VPN started (%u in a row)", (unsigned) crashes);
+    }
+  }
 
   // Runtime PSRAM detection
   size_t psram_size = TailscaleComponent::psram_size();
@@ -175,6 +206,7 @@ bool TailscaleComponent::spawn_stop_task_() {
 void TailscaleComponent::detach_and_stop_instance_() {
   if (this->ml_ == nullptr)
     return;
+  s_guard_state = 0;  // redarc-rbus-esphome: crash guard
   s_active_ml.store(nullptr);
   microlink_set_state_callback(this->ml_, nullptr, nullptr);
   microlink_set_peer_callback(this->ml_, nullptr, nullptr);
@@ -240,6 +272,12 @@ void TailscaleComponent::start_microlink_() {
     static const char *const NO_KEY_HINT = "No auth key yet - enter one on the ESP tab of the web page";
     if (this->setup_status_sensor_ != nullptr && this->setup_status_sensor_->state != NO_KEY_HINT) {
       this->setup_status_sensor_->publish_state(NO_KEY_HINT);
+    }
+    return;
+  }
+  if (this->crash_paused_) {
+    if (this->setup_status_sensor_ != nullptr && this->setup_status_sensor_->state != GUARD_PAUSED_HINT) {
+      this->setup_status_sensor_->publish_state(GUARD_PAUSED_HINT);
     }
     return;
   }
@@ -324,6 +362,7 @@ void TailscaleComponent::start_microlink_() {
   this->microlink_start_ms_ = millis();
   this->registration_failed_logged_ = false;
   ESP_LOGI(TAG, "Tailscale started after network connected!");
+  s_guard_state = GUARD_STARTED;  // redarc-rbus-esphome: crash guard (see setup())
 
   // Anonymous telemetry (on by default; opt out with `disable_telemetry: true`).
   // Network is up here, so the sender task can reach the Cloudflare endpoint.
@@ -345,6 +384,13 @@ void TailscaleComponent::loop() {
     this->microlink_start_ms_ = 0;
     this->registration_failed_logged_ = false;
     this->detach_and_stop_instance_();
+  }
+
+  // redarc-rbus-esphome: crash guard. Running for a while without a crash resets the count.
+  if (this->ml_ != nullptr && s_guard_state == GUARD_STARTED && this->microlink_start_ms_ != 0 &&
+      millis() - this->microlink_start_ms_ > GUARD_STABLE_MS) {
+    s_guard_state = 0;
+    s_guard_crashes = 0;
   }
 
   // Start microlink only after network is connected (and user hasn't disabled)
@@ -516,6 +562,7 @@ void TailscaleComponent::dump_config() {
 }
 
 void TailscaleComponent::on_shutdown() {
+  s_guard_state = 0;  // redarc-rbus-esphome: a clean restart is not a crash
   if (this->ml_ != nullptr) {
     ESP_LOGI(TAG, "Shutting down Tailscale (skipping cleanup — device is rebooting)");
     s_active_ml.store(nullptr);
@@ -660,8 +707,9 @@ void TailscaleComponent::publish_state_() {
           hint = "Connecting to control plane...";
           break;
         default:
-          hint = this->has_auth_key() ? "Waiting for VPN..."
-                                      : "No auth key yet - enter one on the ESP tab of the web page";
+          hint = !this->has_auth_key() ? "No auth key yet - enter one on the ESP tab of the web page"
+                 : this->crash_paused_ ? GUARD_PAUSED_HINT
+                                       : "Waiting for VPN...";
           break;
       }
       if (this->setup_status_sensor_->state != hint) {
@@ -986,6 +1034,7 @@ void TailscaleComponent::set_tailscale_enabled(bool enabled) {
   } else if (enabled && this->ml_ == nullptr) {
     this->vpn_stopping_ = false;
     s_vpn_stopping.store(false);
+    this->crash_paused_ = false;  // redarc-rbus-esphome: switching it on again retries
     ESP_LOGI(TAG, "Re-enabling Tailscale...");
     // Will start in next loop() iteration
   }
@@ -1001,6 +1050,13 @@ void TailscaleComponent::confirm_enable_rollback() {
 void TailscaleComponent::request_reconnect() {
   if (this->reconnect_phase_ != RECONNECT_IDLE) {
     ESP_LOGW(TAG, "Reconnect already in progress (phase %d)", this->reconnect_phase_);
+    return;
+  }
+  if (this->ml_ == nullptr && this->crash_paused_) {
+    // redarc-rbus-esphome: Reconnect retries a VPN the crash guard paused (it starts in loop()).
+    ESP_LOGI(TAG, "Reconnect: starting the VPN again after the crash pause");
+    this->crash_paused_ = false;
+    this->state_changed_ = true;
     return;
   }
   if (this->ml_ == nullptr) {

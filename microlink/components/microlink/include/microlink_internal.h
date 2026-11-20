@@ -517,6 +517,9 @@ struct microlink_s {
     TaskHandle_t derp_rx_task;
     TaskHandle_t coord_task;
     TaskHandle_t wg_mgr_task;
+    /* redarc-rbus-esphome: bit i set = task i above (net_io, derp_tx, derp_rx, coord, wg_mgr) has
+     * its stack in PSRAM. Such a task parks itself when it ends and microlink_stop() frees it. */
+    uint8_t ext_stack_mask;
     /* Tasks started by microlink_start() that have not signed off yet
      * (ml_task_exiting). microlink_stop() waits for this to reach zero
      * instead of sleeping a fixed 3 s and hoping: a coord task still inside
@@ -981,6 +984,17 @@ static inline void *ml_psram_calloc(size_t n, size_t size) {
     if (!ptr) ptr = calloc(n, size);
     return ptr;
 }
+
+/* redarc-rbus-esphome: with PSRAM, the task stacks and the larger queues go there instead of
+ * internal RAM (about 55 KB, more than an ESP32-C5 has free next to Wi-Fi, Bluetooth and Zigbee).
+ * Flash (NVS) work from a task with its stack in PSRAM runs through ml_flash_safe(): the cache,
+ * and with it PSRAM, is off during a flash operation. See microlink.c. */
+BaseType_t ml_task_create(TaskFunction_t fn, const char *name, uint32_t stack_bytes, void *arg,
+                          UBaseType_t prio, TaskHandle_t *handle, BaseType_t core, bool *in_psram);
+void ml_task_delete_self(void);
+QueueHandle_t ml_queue_create(UBaseType_t length, UBaseType_t item_size);
+void ml_queue_delete(QueueHandle_t q);
+bool ml_flash_safe(void (*fn)(void *), void *arg);
 
 #ifdef __cplusplus
 }

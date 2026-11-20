@@ -32,6 +32,21 @@ project is affiliated with or endorses this code.
   Reachable only from the control-server connection, which runs inside TLS. Worth reporting
   upstream.
 
+- `microlink/components/microlink/src/microlink.c` (+ `ml_derp.c`, `ml_net_io.c`, `ml_coord.c`,
+  `ml_wg_mgr.c`, `ml_peer_nvs.c`, `include/microlink_internal.h`): with PSRAM, the five task
+  stacks (about 55 KB) and the larger queues are allocated there (`ml_task_create`,
+  `ml_queue_create`); upstream put them in internal RAM, more than an ESP32-C5 has free next to
+  Wi-Fi, Bluetooth and Zigbee. A task with its stack in PSRAM parks itself when it ends and
+  `microlink_stop()` frees it (`vTaskDeleteWithCaps` on itself needs a helper task, and aborts
+  without RAM for one). Flash writes from those tasks (the peer cache, a rotated node key) run on
+  a short-lived helper task with an internal stack (`ml_flash_safe`): the cache, and with it
+  PSRAM, is off during a flash operation.
+- `__init__.py`: the PSRAM sdkconfig options (octal mode, 80 MHz) are only set when the YAML has
+  no `psram:` block; the ESP32-C5 has quad PSRAM, configured by ESPHome's psram component.
+- `tailscale.h`, `tailscale.cpp`: crash guard. If the unit resets from a crash 3 times in a row
+  within 10 minutes of the VPN starting, the VPN is not started again until Reconnect is pressed
+  or it is switched on again (the count lives in RAM that survives a reset).
+
 Everything else is unmodified so a newer upstream release can be diffed and merged. Review the
 upstream changelog before updating: this code runs on the device next to your Tailscale key.
 - `microlink/components/microlink/src/ml_coord.c`, `fetch_server_pubkey()`: with no `login_server`

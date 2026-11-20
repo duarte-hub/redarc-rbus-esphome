@@ -90,12 +90,9 @@ static void load_table(void) {
     }
 }
 
-static esp_err_t flush_table(void) {
-    if (!s_table) return ESP_ERR_INVALID_STATE;
-
-    s_table->magic = PEER_NVS_MAGIC;
-    s_table->version = PEER_NVS_VERSION;
-
+/* Runs through ml_flash_safe(): the WireGuard manager task that saves peers may have its stack
+ * in PSRAM (redarc-rbus-esphome). */
+static void flush_table_now(void *arg) {
     /* Header layout (must match peer_nvs_table_t):
      *   magic(4) + version(2) + count(2) + lru_clock(2) + _pad(2) = 12 bytes
      * Trailing entries follow contiguously. */
@@ -105,6 +102,17 @@ static esp_err_t flush_table(void) {
     if (err == ESP_OK) {
         nvs_commit(s_nvs);
     }
+    *(esp_err_t *)arg = err;
+}
+
+static esp_err_t flush_table(void) {
+    if (!s_table) return ESP_ERR_INVALID_STATE;
+
+    s_table->magic = PEER_NVS_MAGIC;
+    s_table->version = PEER_NVS_VERSION;
+
+    esp_err_t err = ESP_FAIL;
+    if (!ml_flash_safe(flush_table_now, &err)) return ESP_ERR_NO_MEM;
     return err;
 }
 

@@ -213,6 +213,9 @@ class TailscaleComponent : public Component {
   bool enable_rollback_value_{true};
   uint32_t enable_rollback_ms_{0};
   bool tailscale_user_enabled_{true};
+  // redarc-rbus-esphome: the VPN stays off after it crashed the unit several times in a row (see
+  // setup()); Reconnect or switching it on again clears this.
+  bool crash_paused_{false};
 
   // Runtime auth key (NVS override)
   std::string runtime_auth_key_;

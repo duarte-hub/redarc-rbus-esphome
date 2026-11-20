@@ -2,8 +2,8 @@
 # (8 MB flash, 8 MB PSRAM, dual-band Wi-Fi 6, BLE 5, Zigbee; antenna on the U.FL connector).
 #
 # Same firmware as the XIAO ESP32-C6 build (everything shared is in common.yaml), with room to
-# spare: full assert messages, Improv over Bluetooth as well as USB, and PSRAM for the BLE/Wi-Fi
-# stacks. GitHub releases carry a build for each chip in one manifest; this board installs the
+# spare: full assert messages, Improv over Bluetooth as well as USB, PSRAM for the BLE/Wi-Fi
+# stacks, and the Tailscale VPN (tailscale.yaml). GitHub releases carry a build for each chip in one manifest; this board installs the
 # ESP32-C5 one.
 #
 # First setup (USB, once):
@@ -14,6 +14,7 @@
 #   3. Add the device in Home Assistant; it provisions the API key.
 #   4. Web UI Config page: enter the Display MAC, then Pair Now and the code the Display shows.
 #   5. Zigbee: permit join in Zigbee2MQTT, then press "Zigbee Pair" on the unit.
+#   6. Optional, Tailscale: paste an auth key into the Tailscale card on the ESP tab.
 #
 # The board has no RF switch (unlike the C6): the antenna on the U.FL connector is the only one.
 # Build locally: python3 web/build.py && cp web/redarc_ui.js firmware/ && esphome compile firmware/redarc-camper-c5.yaml
@@ -35,6 +36,8 @@ substitutions:
 
 packages:
   common: !include common.yaml
+  # Tailscale VPN (off until an auth key is entered on the web page's ESP tab)
+  tailscale: !include tailscale.yaml
 
 esp32:
   board: seeed_xiao_esp32c5

@@ -530,13 +530,21 @@ Both read as unknown until the ESP has joined a network. They are not exposed ba
 its menu and on the ESP tab when a sensor named like "Zigbee LQI" exists. It falls back to the
 dBm sensor ("Zigbee Signal") only when there is no LQI sensor.
 
-## Tailscale (optional)
+## Tailscale
 
 `components/tailscale` lets the ESP join your tailnet as its own node (its own `100.x` address),
 so the web page and API are reachable from anywhere. It is a copy of the community project
 [esphome-tailscale](https://github.com/Csontikka/esphome-tailscale) (MIT) with its bundled
-libraries in `microlink/`; see `components/tailscale/UPSTREAM.md` for the source commit, the one
-change made here (telemetry is off by default) and the licenses.
+libraries in `microlink/`; see `components/tailscale/UPSTREAM.md` for the source commit, the
+changes made here and the licenses.
+
+**ESP32-C5 firmware:** included (`firmware/tailscale.yaml`) and off until you enter an auth key
+in the Tailscale card on the web page's **ESP** tab. Its task stacks, queues and buffers are in
+PSRAM, since internal RAM is what Wi-Fi, Bluetooth and Zigbee need. If it crashes the unit 3 times
+in a row within 10 minutes of starting, it stays off and the *VPN Setup Hint* says so until you
+press *Reconnect*. The C6 firmware does not include it (4 MB of flash, no PSRAM).
+
+**Your own config** (for example a C6 with room for it):
 
 ```yaml
 external_components:
