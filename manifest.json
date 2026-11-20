@@ -1,0 +1,37 @@
+{
+  "name": "REDARC TVMS bridge",
+  "version": "2026.11.16",
+  "home_assistant_domain": "esphome",
+  "builds": [
+    {
+      "chipFamily": "ESP32-C6",
+      "ota": {
+        "path": "redarc-camper-2026.11.16.ota.bin",
+        "md5": "0aede817d9b1dd2fc11e387522cf1a04",
+        "release_url": "https://github.com/duarte-hub/redarc-rbus-esphome/releases/tag/v2026.11.16",
+        "summary": "redarc-rbus-esphome 2026.11.16"
+      },
+      "parts": [
+        {
+          "path": "redarc-camper-2026.11.16.factory.bin",
+          "offset": 0
+        }
+      ]
+    },
+    {
+      "chipFamily": "ESP32-C5",
+      "ota": {
+        "path": "redarc-camper-c5-2026.11.16.ota.bin",
+        "md5": "b0889f353876302fdbf5900f2986a672",
+        "release_url": "https://github.com/duarte-hub/redarc-rbus-esphome/releases/tag/v2026.11.16",
+        "summary": "redarc-rbus-esphome 2026.11.16"
+      },
+      "parts": [
+        {
+          "path": "redarc-camper-c5-2026.11.16.factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
