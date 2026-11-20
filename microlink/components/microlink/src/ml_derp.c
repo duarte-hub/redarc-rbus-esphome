@@ -447,7 +447,7 @@ static int poll_derp_read(microlink_t *ml) {
     /* For RecvPacket (0x05): first 32 bytes are sender's public key */
     if (frame_type == DERP_FRAME_RECV_PACKET && len > 32) {
         memcpy(src_key, buf, 32);
-        payload = malloc(len - 32);
+        payload = ml_psram_malloc(len - 32);
         if (payload) {
             memcpy(payload, buf + 32, len - 32);
             payload_len = len - 32;
@@ -559,10 +559,11 @@ void ml_derp_tx_task(void *arg) {
          * rate during the exit-node throughput hunt (loop_count vs frames_tx/rx
          * tells us if the loop spins without progress or is genuinely starved). */
         if (loop_start - last_heartbeat_ms > 2000) {
-            ESP_LOGW(TAG, "HEARTBEAT: loop=%lu conn=%d rx=%lu tx=%lu stack_free=%lu",
+            ESP_LOGW(TAG, "HEARTBEAT: loop=%lu conn=%d rx=%lu tx=%lu stack_free=%lu int_free=%u int_min=%u",
                      (unsigned long)loop_count, ml->derp.connected,
                      (unsigned long)s_derp_frames_rx, (unsigned long)frames_tx,
-                     (unsigned long)uxTaskGetStackHighWaterMark(NULL));
+                     (unsigned long)uxTaskGetStackHighWaterMark(NULL),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
             last_heartbeat_ms = loop_start;
         }
 
@@ -1147,7 +1148,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
 
         /* Encrypt JSON with NaCl box: our WG private key -> DERP server public key */
         size_t ciphertext_len = json_len + NACL_BOX_MACBYTES;
-        uint8_t *ciphertext = malloc(ciphertext_len);
+        uint8_t *ciphertext = ml_psram_malloc(ciphertext_len);
         if (!ciphertext) {
             goto fail_tls;
         }
@@ -1165,7 +1166,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
 
         /* Build ClientInfo frame payload: nodekey(32) + nonce(24) + ciphertext */
         size_t ci_payload_len = 32 + NACL_BOX_NONCEBYTES + ciphertext_len;
-        uint8_t *ci_payload = malloc(ci_payload_len);
+        uint8_t *ci_payload = ml_psram_malloc(ci_payload_len);
         if (!ci_payload) {
             free(ciphertext);
             goto fail_tls;
@@ -1200,7 +1201,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
         err = derp_recv_frame_header(ml, &si_type, &si_len, DERP_CONNECT_TIMEOUT_MS);
         if (err == ESP_OK && si_type == DERP_FRAME_SERVER_INFO && si_len > 0) {
             /* Read and discard ServerInfo payload */
-            uint8_t *si_buf = malloc(si_len);
+            uint8_t *si_buf = ml_psram_malloc(si_len);
             if (si_buf) {
                 derp_tls_read_all(ml, si_buf, si_len, DERP_CONNECT_TIMEOUT_MS);
                 free(si_buf);

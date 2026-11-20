@@ -1507,7 +1507,7 @@ static void process_disco_packet(microlink_t *ml, const ml_rx_packet_t *pkt) {
     if (!shared) return;
 
     size_t plaintext_len = ciphertext_len - NACL_BOX_MACBYTES;
-    uint8_t *plaintext = malloc(plaintext_len);
+    uint8_t *plaintext = ml_psram_malloc(plaintext_len);
     if (!plaintext) return;
 
     if (nacl_box_open_afternm(plaintext, ciphertext, ciphertext_len, nonce, shared) != 0) {

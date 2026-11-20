@@ -516,6 +516,8 @@ microlink_t *microlink_init(const microlink_config_t *config) {
     }
 
     ESP_LOGI(TAG, "MicroLink v2 initialized (max_peers=%d)", ml->config.max_peers);
+    ESP_LOGW(TAG, "Internal RAM after init: %u free (redarc-rbus-esphome diagnostic)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     return ml;
 }
 
@@ -657,6 +659,8 @@ skip_bsd_socket:
     }
 
     ESP_LOGI(TAG, "All tasks started");
+    ESP_LOGW(TAG, "Internal RAM after starting tasks: %u free, %u in PSRAM stacks (mask 0x%02x)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)__builtin_popcount(ml->ext_stack_mask), ml->ext_stack_mask);
     return ESP_OK;
 }
 

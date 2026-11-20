@@ -328,12 +328,14 @@ done:
 static err_t wireguardif_device_output(struct wireguard_device *device, struct pbuf *q, const ip_addr_t *ipaddr, u16_t port) {
 	// In magicsock mode, use external UDP output callback
 	if (device->udp_output_fn) {
-		uint8_t *data = (uint8_t *)mem_malloc(q->tot_len);
+		/* redarc-rbus-esphome: PSRAM first; internal RAM is what Wi-Fi needs. */
+		uint8_t *data = (uint8_t *)heap_caps_malloc(q->tot_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+		if (!data) data = (uint8_t *)heap_caps_malloc(q->tot_len, MALLOC_CAP_DEFAULT);
 		if (data) {
 			pbuf_copy_partial(q, data, q->tot_len, 0);
 			uint32_t dest_ip = ip4_addr_get_u32(ip_2_ip4(ipaddr));
 			err_t result = device->udp_output_fn(dest_ip, port, data, q->tot_len, device->udp_output_ctx);
-			mem_free(data);
+			heap_caps_free(data);
 			return result;
 		}
 		return ERR_MEM;
